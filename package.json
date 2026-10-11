@@ -1,0 +1,11 @@
+{
+  "name": "hoverslam",
+  "version": "1.0.0",
+  "description": "Land a rocket booster on a drone ship. A single-page canvas game.",
+  "private": true,
+  "scripts": {
+    "build": "node src/build.js",
+    "test": "node tests/test-sim.js 40 && node tests/smoke.js",
+    "serve": "npx serve public"
+  }
+}
