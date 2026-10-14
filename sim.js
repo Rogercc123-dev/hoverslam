@@ -21,6 +21,19 @@
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
   function sign(v) { return v < 0 ? -1 : 1; }
   function wrapAngle(v) { v = (v + Math.PI) % (Math.PI * 2); if (v < 0) v += Math.PI * 2; return v - Math.PI; }
+  function trackFlip(s, delta) {
+    var dir = delta > 0.0001 ? 1 : delta < -0.0001 ? -1 : 0;
+    if (!dir) return;
+    if (s.flipDirection && dir !== s.flipDirection) s.flipProgress = 0;
+    s.flipDirection = dir;
+    s.flipProgress += Math.abs(delta);
+    if (s.flipProgress >= Math.PI * 2) {
+      s.flipProgress -= Math.PI * 2;
+      s.flips++;
+      s.trickScore += 100;
+      s.events.push('flip');
+    }
+  }
 
   function rng(seed) {
     var a = (seed >>> 0) || 1;
@@ -151,7 +164,7 @@
       wind0: (r() < 0.5 ? -1 : 1) * level.wind, wp1: r() * 6.28, wp2: r() * 6.28,
       ship: { x: 0, v: (r() < 0.5 ? -1 : 1) * level.shipV, vNow: 0, ph: r() * 6.28 },
       fuel: level.fuel, throttle: 0, legs: 0, legsStarted: false, rot: 0, om: 0,
-      land: null, burnTime: 0
+      land: null, burnTime: 0, flipDirection: 0, flipProgress: 0, flips: 0, trickScore: 0
     };
     s.ship.vNow = s.ship.v;
     var dxAbs = level.dx[0] + (level.dx[1] - level.dx[0]) * r();
@@ -204,7 +217,9 @@
     s.om += ROT_ACC * (rot > 0 ? lv.rcsL : lv.rcsR) * rot * dt;
     s.om *= Math.exp(-(rot === 0 && s.assist ? ASSIST_DAMP : 0.1) * dt);
     s.om = clamp(s.om, -ROT_MAX, ROT_MAX);
+    var previousTh = s.th;
     s.th += s.om * dt;
+    trackFlip(s, s.th - previousTh);
 
     // forces
     var aT = maxAccel(s) * s.throttle;
@@ -286,7 +301,9 @@
       fuel: Math.round(800 * s.fuel / 10) * 10,
       attitude: rough ? 0 : Math.round(200 * clamp(1 - Math.abs(rel) / lv.aMax, 0, 1) / 10) * 10
     };
+    parts.trick = s.trickScore;
     var total = parts.landing + parts.soft + parts.centre + parts.fuel + parts.attitude;
+    total += parts.trick;
     info.ok = true;
     info.rough = rough;
     info.parts = parts;

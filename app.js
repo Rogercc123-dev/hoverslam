@@ -145,7 +145,7 @@
     mode: 'boot', level: LV[0], sim: null, seed: 1, cur: 1, attract: true, frozen: false, paused: false, acc: 0,
     camX: 0, camY: 800, lz: Math.log(0.4), camZ: 0.4, shake: 0, flash: 0, endTimer: 0, resultShown: false,
     clouds: [], D: null, hintT: 0, hintGone: false, attractWait: 0, lowBeep: 0, th: THEMES.dusk,
-    endless: null, transitionTime: 0, secretTime: 0, secretSeen: {},
+    endless: null, roundIntroTime: 0, secretTime: 0, secretSeen: {},
     highEgg: false, flipEgg: false
   };
   function sx(x) { return W / 2 + (x - G.camX) * G.camZ; }
@@ -348,12 +348,35 @@
       var e = s.events[i];
       if (e === 'legs') Snd.clunk();
       else if (e === 'touch') fxTouch(s);
+      else if (e === 'flip') {
+        fxFlip(s);
+        if (G.endless) { G.endless.score += 100; G.endless.flips++; }
+        showSecret('flip', 'FLIP BONUS · +100 STYLE');
+      }
       else if (e === 'crash') fxCrash(s);
       else if (e === 'splash') fxSplash(s);
       else if (e === 'fault') fxFault(s);
       else if (e === 'relight') { Snd.clunk(); buzz(30); }
     }
     s.events.length = 0;
+  }
+  function fxFlip(s) {
+    var pop = document.createElement('div'), bits = document.createElement('span');
+    pop.className = 'pixel-pop';
+    pop.style.left = clamp(sx(s.x) + 28, 32, W - 32) + 'px';
+    pop.style.top = clamp(sy(s.y) - 25, 70, H - 100) + 'px';
+    pop.innerHTML = '<b>+100</b><small>BACKFLIP</small>';
+    bits.className = 'pixel-bits';
+    for (var i = 0; i < 8; i++) {
+      var bit = document.createElement('i');
+      bit.style.setProperty('--dx', ((i % 4) - 1.5) * 13 + 'px');
+      bit.style.setProperty('--dy', (i < 4 ? -1 : 1) * (18 + (i % 3) * 8) + 'px');
+      bit.style.setProperty('--lag', (i * 0.025) + 's');
+      bits.appendChild(bit);
+    }
+    pop.appendChild(bits); $('#effects-layer').appendChild(pop);
+    pop.addEventListener('animationend', function () { if (pop.parentNode) pop.parentNode.removeChild(pop); });
+    G.flash = Math.max(G.flash, 0.22);
   }
 
   // ------------------------------------------------------------------ drawing: world
@@ -621,11 +644,23 @@
       ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = lg; ctx.fillRect(gx - rr, gy - rr, rr * 2, rr * 2); ctx.globalCompositeOperation = 'source-over';
     }
     drawSea(th, s, 1);
+    if (G.highEgg && s.status === 'flying' && s.y > 2800) drawHighEgg(s);
     if (s.status === 'flying' || s.status === 'landed') drawRocket(s);
     drawParts();
     drawGuidance(s);
     drawShipMarker(s, D);
     if (G.flash > 0.01) { ctx.fillStyle = 'rgba(255,230,200,' + (G.flash * 0.7) + ')'; ctx.fillRect(-20, -20, W + 40, H + 40); G.flash *= Math.exp(-5 * dt); }
+  }
+  function drawHighEgg(s) {
+    var t = s.t, x = clamp(sx(s.x) + W * 0.24 + Math.sin(t * 0.7) * 18, 48, W - 48), y = H * 0.38 + Math.sin(t * 1.6) * 5;
+    ctx.save(); ctx.globalAlpha = 0.88; ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = 'rgba(93,244,220,0.10)'; ctx.beginPath(); ctx.moveTo(x - 8, y + 8); ctx.lineTo(x + 8, y + 8); ctx.lineTo(x + 18, y + 34); ctx.lineTo(x - 18, y + 34); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#5df4dc'; ctx.fillRect(x - 22, y + 1, 44, 6); ctx.fillRect(x - 14, y - 4, 28, 5); ctx.fillRect(x - 8, y - 7, 16, 3);
+    ctx.fillStyle = '#183c50'; ctx.fillRect(x - 13, y + 2, 26, 3);
+    ctx.fillStyle = '#ffb25e'; ctx.fillRect(x - 8, y + 2, 4, 3); ctx.fillRect(x + 4, y + 2, 4, 3);
+    ctx.fillStyle = '#b8ff82'; ctx.fillRect(x - 3, y - 13, 6, 6); ctx.fillRect(x - 6, y - 10, 12, 3);
+    ctx.fillStyle = '#07111c'; ctx.fillRect(x - 2, y - 12, 1, 2); ctx.fillRect(x + 1, y - 12, 1, 2);
+    ctx.restore();
   }
 
   // ------------------------------------------------------------------ HUD
@@ -684,7 +719,7 @@
 
   // ------------------------------------------------------------------ screens
   var screens = {};
-  ['menu', 'levels', 'brief', 'result', 'pause', 'settings', 'endless', 'transition'].forEach(function (n) { screens[n] = document.getElementById('s-' + n); });
+  ['menu', 'levels', 'brief', 'result', 'pause', 'settings', 'endless'].forEach(function (n) { screens[n] = document.getElementById('s-' + n); });
   function setScreen(name) {
     Object.keys(screens).forEach(function (k) { screens[k].hidden = k !== name; });
     chrome();
@@ -692,6 +727,7 @@
   function chrome() {
     var hud = (G.mode === 'fly' || G.mode === 'ended') && !G.resultShown;
     $('#hud').hidden = !hud;
+    $('#arcade-hud').hidden = !(hud && G.endless);
     $('#controls').hidden = !(G.mode === 'fly' && !G.paused);
     if (!hud) el['hint'].hidden = true;
   }
@@ -772,7 +808,7 @@
   }
   function openLevels() { G.endless = null; G.mode = 'levels'; startAttract(); buildLevels(); setScreen('levels'); }
   function openEndless() { G.mode = 'endless'; startAttract(); G.endless = null; setScreen('endless'); }
-  function endlessRound(transition) {
+  function endlessRound() {
     var e = G.endless, round = e.round, difficulty = e.difficulty;
     var seed = (Math.random() * 1e9) | 0, pick = Sim.rng(seed)(), base = LV[(Math.floor(pick * LV.length))];
     var lv = {}, factor = (difficulty === 'easy' ? 0.82 : difficulty === 'hard' ? 1.22 : 1) * (1 + Math.min(0.4, (round - 1) * 0.025));
@@ -790,21 +826,20 @@
     lv.aMax = Math.max(0.12, Math.round(base.aMax / factor * 57.296 / 5) * 5 * Math.PI / 180);
     e.seed = seed; e.current = lv;
     G.cur = 0; G.seed = seed;
-    newRound(lv, seed, true); G.attract = false; G.frozen = false; G.paused = false; G.resultShown = false; G.mode = transition ? 'transition' : 'fly'; G.endTimer = 0;
-    resetInput(); Snd.init();
-    if (transition) {
-      G.transitionTime = 0;
-      $('#e-progress').style.transform = 'scaleX(0)';
-      $('#e-next-round').textContent = String(round).padStart(2, '0');
-      $('#e-next-difficulty').textContent = difficulty + ' · ' + base.name;
-      setScreen('transition');
-    } else setScreen(null);
+    newRound(lv, seed, true); G.attract = false; G.frozen = false; G.paused = false; G.resultShown = false; G.mode = 'fly'; G.endTimer = 0;
+    G.roundIntroTime = round > 1 ? 1.25 : 0;
+    var roundCallout = $('#round-callout');
+    roundCallout.hidden = round <= 1;
+    if (round > 1) { roundCallout.classList.remove('pop'); void roundCallout.offsetWidth; roundCallout.classList.add('pop'); }
+    $('#round-callout-n').textContent = String(round).padStart(2, '0');
+    $('#round-callout-name').textContent = base.name;
+    resetInput(); Snd.init(); setScreen(null);
   }
   function startEndless(difficulty) {
-    G.endless = { difficulty: difficulty, round: 1, landed: 0, score: 0, bestLanding: 0, verticalSum: 0, fuelSum: 0, startedAt: performance.now() };
+    G.endless = { difficulty: difficulty, round: 1, landed: 0, score: 0, bestLanding: 0, verticalSum: 0, fuelSum: 0, flips: 0, startedAt: performance.now() };
     G.highEgg = false; G.flipEgg = false; endlessRound(false);
   }
-  function nextEndless() { Snd.click(); G.endless.round++; endlessRound(true); }
+  function nextEndless() { Snd.click(); G.endless.round++; endlessRound(); }
   function openMenu() { G.endless = null; G.mode = 'menu'; startAttract(); buildMenu(); setScreen('menu'); }
   function openSettings(from) {
     G.settingsFrom = from; buildToggles($('#s-toggles')); $('#s-reset').textContent = 'Reset progress'; $('#s-reset')._arm = false; setScreen('settings');
@@ -830,7 +865,7 @@
     var lm = function (id, v) { var n = document.getElementById(id); if (n) n.textContent = v; };
     var fg = document.getElementById('fuel-goal'); if (fg) fg.style.left = (lv.fuelGoal * 100).toFixed(1) + '%';
     lm('lim-vs', '\u2264' + fmt(lv.vMax, 1)); lm('lim-hs', '\u2264' + fmt(lv.hMax, 1)); lm('lim-tilt', '\u2264' + Math.round(lv.aMax * 57.296) + '\u00B0');
-    G.highEgg = false; G.flipEgg = false;
+    G.highEgg = false; G.roundIntroTime = 0; $('#round-callout').hidden = true;
     parts.length = 0; G.acc = 0; G.shake = 0; G.flash = 0; G.D = Sim.deckPose(G.sim);
     updateCamera(0, true);
   }
@@ -858,7 +893,7 @@
         var rec = save.levels[lv.id] || (save.levels[lv.id] = { done: false, ring: false, fuel: false, best: 0 });
         rec.done = true; if (r.stars.ring) rec.ring = true; if (r.stars.fuel) rec.fuel = true; if (r.score > rec.best) rec.best = r.score; persist();
       } else {
-        endless.landed++; endless.score += r.score; endless.bestLanding = Math.max(endless.bestLanding, r.score);
+        endless.landed++; endless.score += r.score - (r.parts.trick || 0); endless.bestLanding = Math.max(endless.bestLanding, r.score);
         endless.verticalSum += Math.abs(r.vn); endless.fuelSum += r.fuelLeft;
       }
       var side = Math.abs(r.uc) < 0.5 ? 'on the mark' : fmt(Math.abs(r.uc), 1) + ' m off centre';
@@ -870,6 +905,7 @@
       h += '<li class="' + (r.stars.fuel ? 'ok' : 'no') + '">' + (r.stars.fuel ? CHECK : CROSS) + '<span>' + fmt(lv.fuelGoal * 100) + '% fuel left or more</span><em>' + fmt(r.fuelLeft * 100) + '%</em></li></ul>';
       var p = r.parts;
       h += '<table class="score"><tr><td>Landing</td><td>' + p.landing + '</td></tr><tr><td>Soft touchdown</td><td>+' + p.soft + '</td></tr><tr><td>Centring</td><td>+' + p.centre + '</td></tr><tr><td>Fuel left</td><td>+' + p.fuel + '</td></tr><tr><td>Attitude</td><td>+' + p.attitude + '</td></tr>';
+      if (p.trick) h += '<tr><td>Backflip bonus</td><td>+' + p.trick + '</td></tr>';
       h += '<tr class="total"><td>Score</td><td><span id="r-score">0</span>' + (r.score > prevBest && prevBest > 0 ? '<span class="tag-new">NEW BEST</span>' : '') + '</td></tr></table>';
       h += '<div class="actions">';
       if (endless) h += '<button class="btn primary" id="r-next">Next descent <small>Round ' + String(endless.round + 1).padStart(2, '0') + '</small></button>';
@@ -883,7 +919,7 @@
         if (newBest) { best = { rounds: e.landed, score: e.score }; save.endless[e.difficulty] = best; persist(); }
         h += '<div class="result-head death-head"><p class="eyebrow">' + e.difficulty + ' run · ' + (newBest ? 'new personal best' : 'best: ' + best.rounds + ' landings') + '</p><h2>Run over</h2></div>';
         h += '<p class="death-cause"><b>' + m.title + '</b><span>' + m.detail + '</span></p>';
-        h += '<div class="arcade-stats death-stats"><div><b>' + String(e.landed).padStart(2, '0') + '</b><span>LANDINGS</span></div><div><b>' + e.score.toLocaleString() + '</b><span>TOTAL SCORE</span></div><div><b>' + e.bestLanding.toLocaleString() + '</b><span>BEST TOUCHDOWN</span></div><div><b>' + (mins + ':' + String(seconds % 60).padStart(2, '0')) + '</b><span>SURVIVAL TIME</span></div><div><b>' + (e.landed ? (e.verticalSum / e.landed).toFixed(1) : '—') + '</b><span>AVG DESCENT M/S</span></div><div><b>' + (e.landed ? Math.round(e.fuelSum / e.landed * 100) + '%' : '—') + '</b><span>AVG FUEL LEFT</span></div></div>';
+        h += '<div class="arcade-stats death-stats"><div><b>' + String(e.landed).padStart(2, '0') + '</b><span>LANDINGS</span></div><div><b>' + e.score.toLocaleString() + '</b><span>TOTAL SCORE</span></div><div><b>' + e.bestLanding.toLocaleString() + '</b><span>BEST TOUCHDOWN</span></div><div><b>' + e.flips + '</b><span>BACKFLIPS</span></div><div><b>' + (mins + ':' + String(seconds % 60).padStart(2, '0')) + '</b><span>SURVIVAL TIME</span></div><div><b>' + (e.landed ? (e.verticalSum / e.landed).toFixed(1) : '—') + '</b><span>AVG DESCENT M/S</span></div><div><b>' + (e.landed ? Math.round(e.fuelSum / e.landed * 100) + '%' : '—') + '</b><span>AVG FUEL LEFT</span></div></div>';
         h += '<p class="tip death-tip">' + m.tip + '</p><div class="actions"><button class="btn primary" id="r-retry">Run it back</button><button class="btn ghost" id="r-mode">Change difficulty</button><button class="btn ghost" id="r-levels">Missions</button></div>';
       } else {
         h += '<div class="result-head"><p class="eyebrow">Mission ' + lv.id + ' · ' + lv.name + '</p><h2>' + m.title + '</h2></div>';
@@ -975,7 +1011,6 @@
   on('m-levels', openLevels);
   on('m-endless', openEndless);
   on('e-back', openMenu);
-  on('e-skip', launch);
   Array.prototype.forEach.call(document.querySelectorAll('[data-endless]'), function (b) { b.addEventListener('click', function () { Snd.init(); Snd.click(); startEndless(b.getAttribute('data-endless')); }); });
   on('m-settings', function () { openSettings('menu'); });
   on('l-back', openMenu);
@@ -1001,10 +1036,6 @@
     var s = G.sim;
     if (G.mode === 'brief') {
       Sim.advanceTime(s, dt);
-    } else if (G.mode === 'transition') {
-      G.transitionTime += dt;
-      $('#e-progress').style.transform = 'scaleX(' + clamp(G.transitionTime / 1.8, 0, 1) + ')';
-      if (G.transitionTime >= 1.8) launch();
     } else if (G.attract) {
       stepSim(dt, function () { return Sim.autopilot(G.sim); });
       emitFx(s, dt);
@@ -1013,14 +1044,18 @@
       stepSim(dt, readInput);
       emitFx(s, dt);
       if (s.status === 'flying') {
-        if (s.y > 3200) showSecret('high', 'YOU FOUND THE TOP OF THE SKY');
-        if (Math.abs(s.th) >= TAU) showSecret('flip', 'ROCKET RODEO! FULL BACKFLIP');
+        if (s.y > 3200 && !G.highEgg) { G.highEgg = true; showSecret('high', 'UNKNOWN CONTACT · TRANSPONDER OFF'); }
       }
       if (s.status !== 'flying') { G.mode = 'ended'; G.endTimer = 0; resetInput(); chrome(); }
     } else if (G.mode === 'ended') {
       stepSim(dt, function () { return inp; });
       G.endTimer += dt;
       if (!G.resultShown && G.endTimer > (s.status === 'landed' ? 1.5 : 2.0)) showResult();
+    }
+    if (G.roundIntroTime > 0) { G.roundIntroTime = Math.max(0, G.roundIntroTime - dt); if (!G.roundIntroTime) $('#round-callout').hidden = true; }
+    if (G.endless && (G.mode === 'fly' || G.mode === 'ended')) {
+      $('#arcade-round').textContent = String(G.endless.round).padStart(2, '0');
+      $('#arcade-score').textContent = G.endless.score.toLocaleString();
     }
     if (G.secretTime > 0) { G.secretTime = Math.max(0, G.secretTime - dt); if (!G.secretTime) $('#easter-egg').hidden = true; }
     if (!(G.mode === 'fly' && G.paused)) updateParts(dt);
