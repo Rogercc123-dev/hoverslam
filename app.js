@@ -32,13 +32,15 @@
 
   // ------------------------------------------------------------------ progress
   var KEY = 'hoverslam.v1';
-  var save = { levels: {}, settings: { sound: true, stability: true, guidance: true, haptics: true } };
+  var REV = 2;   // rev 2 replaced missions 10 and up, so progress on those from older saves is dropped
+  var save = { rev: REV, levels: {}, settings: { sound: true, stability: true, guidance: true, haptics: true } };
   try {
     var raw = localStorage.getItem(KEY);
     if (raw) {
       var j = JSON.parse(raw);
       if (j && typeof j === 'object') {
         if (j.levels && typeof j.levels === 'object') save.levels = j.levels;
+        if ((j.rev | 0) < REV) for (var lid in save.levels) if (+lid >= 10) delete save.levels[lid];
         if (j.settings && typeof j.settings === 'object') for (var k in save.settings) if (typeof j.settings[k] === 'boolean') save.settings[k] = j.settings[k];
       }
     }
@@ -123,7 +125,8 @@
       chime: function () { tone(523, 0, 0.5, 'triangle', 0.22, 0.12); tone(659, 0, 0.5, 'triangle', 0.22, 0.22); tone(784, 0, 0.7, 'triangle', 0.22, 0.32); },
       boom: function () { burst(1.3, 0, 900, 1.0); tone(70, 26, 1.0, 'sine', 0.8); burst(0.4, 1500, 7000, 0.35); },
       splash: function () { burst(0.9, 600, 5000, 0.55); tone(120, 50, 0.4, 'sine', 0.35); },
-      beep: function () { tone(880, 0, 0.07, 'square', 0.04); }
+      beep: function () { tone(880, 0, 0.07, 'square', 0.04); },
+      alarm: function () { tone(990, 0, 0.13, 'square', 0.07); tone(740, 0, 0.13, 'square', 0.07, 0.17); tone(990, 0, 0.13, 'square', 0.07, 0.34); }
     };
   })();
   function buzz(p) { if (save.settings.haptics && navigator.vibrate) { try { navigator.vibrate(p); } catch (e) {} } }
@@ -140,7 +143,8 @@
   var G = {
     mode: 'boot', level: LV[0], sim: null, seed: 1, cur: 1, attract: true, frozen: false, paused: false, acc: 0,
     camX: 0, camY: 800, lz: Math.log(0.4), camZ: 0.4, shake: 0, flash: 0, endTimer: 0, resultShown: false,
-    clouds: [], D: null, hintT: 0, hintGone: false, attractWait: 0, lowBeep: 0, th: THEMES.dusk
+    clouds: [], D: null, hintT: 0, hintGone: false, attractWait: 0, lowBeep: 0, th: THEMES.dusk,
+    endless: null
   };
   function sx(x) { return W / 2 + (x - G.camX) * G.camZ; }
   function sy(y) { return H / 2 - (y - G.camY) * G.camZ; }
@@ -280,6 +284,14 @@
         }
       }
     }
+    if (G.level.leak && s.fuel > 0 && Math.random() < dt * 34) {
+      var lp = Sim.toWorld(s, 2.0, 5 + Math.random() * 3);
+      addPart({ k: 'steam', x: lp.x, y: lp.y, vx: s.vx * 0.85 + 5 + Math.random() * 6, vy: s.vy * 0.85 + (Math.random() - 0.5) * 6, life: 0.7 + Math.random() * 0.6, s0: 0.7, s1: 3, drag: 0.8 });
+    }
+    if (s.engineOut && Math.random() < dt * 28) {
+      var np = Sim.toWorld(s, 0, -18.2);
+      addPart({ k: 'smoke', x: np.x, y: np.y, vx: s.vx * 0.7 + (Math.random() - 0.5) * 6, vy: s.vy * 0.7 + (Math.random() - 0.5) * 6, life: 0.9 + Math.random() * 0.7, s0: 1.2, s1: 4, g: -1, drag: 1, col: [34, 36, 40], a: 0.45 });
+    }
     if (s.rot && Math.random() < dt * 42) {
       var tp = Sim.toWorld(s, s.rot * 1.95, 12), c = Math.cos(s.th), sn = Math.sin(s.th);
       addPart({ k: 'cold', x: tp.x, y: tp.y, vx: s.rot * c * 24 + s.vx, vy: s.rot * sn * 24 + s.vy, life: 0.26, s0: 0.45, s1: 1.5, drag: 1.5 });
@@ -323,6 +335,12 @@
     splashAt(s.x, sh, p);
     G.shake = reduceMotion ? 0 : 9; Snd.splash(); buzz(90);
   }
+  function fxFault(s) {
+    var nz = Sim.toWorld(s, 0, -18.2), i;
+    for (i = 0; i < 16; i++) addPart({ k: 'smoke', x: nz.x, y: nz.y, vx: s.vx * 0.5 + (Math.random() - 0.5) * 14, vy: s.vy * 0.5 + (Math.random() - 0.5) * 14, life: 1.2 + Math.random(), s0: 1.5, s1: 6, g: -1, drag: 0.9, col: [40, 42, 46], a: 0.5 });
+    G.shake = Math.max(G.shake, reduceMotion ? 0 : 6);
+    Snd.alarm(); buzz([70, 40, 70]);
+  }
   function handleEvents(s) {
     for (var i = 0; i < s.events.length; i++) {
       var e = s.events[i];
@@ -330,6 +348,8 @@
       else if (e === 'touch') fxTouch(s);
       else if (e === 'crash') fxCrash(s);
       else if (e === 'splash') fxSplash(s);
+      else if (e === 'fault') fxFault(s);
+      else if (e === 'relight') { Snd.clunk(); buzz(30); }
     }
     s.events.length = 0;
   }
@@ -541,7 +561,7 @@
   }
 
   function drawGuidance(s) {
-    if (!save.settings.guidance || s.status !== 'flying' || G.mode !== 'fly') return;
+    if (!save.settings.guidance || s.status !== 'flying' || G.mode !== 'fly' || s.blackout) return;
     var pr = Sim.predict(s), i, z = G.camZ;
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     for (i = 1; i < pr.pts.length; i += 2) {
@@ -569,6 +589,12 @@
       if (left) { ctx.moveTo(14, ay); ctx.lineTo(24, ay - 6); ctx.lineTo(24, ay + 6); } else { ctx.moveTo(W - 14, ay); ctx.lineTo(W - 24, ay - 6); ctx.lineTo(W - 24, ay + 6); }
       ctx.closePath(); ctx.fill();
       ctx.textAlign = 'left'; ctx.fillStyle = '#eef4f8'; ctx.fillText(label, left ? 32 : bx + 8, ay);
+    } else if (py > H - 40) {
+      // the ship is still below the bottom edge of the screen: point down at it
+      var mx = clamp(px, 34, W - 34), my = H - 178, lab = 'SHIP';
+      ctx.fillStyle = 'rgba(8,19,31,0.65)'; ctx.fillRect(mx - 30, my - 22, 60, 30);
+      ctx.fillStyle = '#ffb25e'; ctx.beginPath(); ctx.moveTo(mx, my + 6); ctx.lineTo(mx - 6, my - 4); ctx.lineTo(mx + 6, my - 4); ctx.closePath(); ctx.fill();
+      ctx.textAlign = 'center'; ctx.fillStyle = '#eef4f8'; ctx.fillText(lab, mx, my - 14);
     } else if (G.camZ < 1.1 && py > 24 && py < H + 40) {
       var bob = Math.sin(s.t * 3) * 3, y = py - 34 - bob;
       ctx.fillStyle = '#ffb25e'; ctx.beginPath(); ctx.moveTo(px, y + 8); ctx.lineTo(px - 7, y - 4); ctx.lineTo(px + 7, y - 4); ctx.closePath(); ctx.fill();
@@ -607,11 +633,12 @@
   function cls(ratio) { return ratio <= 1 ? 'ok' : ratio <= 1.35 ? 'warn' : 'bad'; }
   function updateHud(dt) {
     var s = G.sim, lv = G.level, T = Sim.telemetry(s), near = T.alt < 100 && s.status === 'flying';
-    setTx(el['v-alt'], T.alt >= 100 ? String(Math.round(T.alt)) : Math.max(0, T.alt).toFixed(1));
-    setTx(el['v-vs'], (T.vn >= 0 ? '↓' : '↑') + Math.abs(T.vn).toFixed(Math.abs(T.vn) < 10 ? 1 : 0));
-    setTx(el['v-hs'], (T.vt >= 0 ? '→' : '←') + Math.abs(T.vt).toFixed(1));
-    setTx(el['v-tilt'], (T.rel >= 0 ? '↶' : '↷') + Math.abs(T.rel * 57.296).toFixed(0));
-    var a = near ? cls(T.vn / lv.vMax) : '', b = near ? cls(Math.abs(T.vt) / lv.hMax) : '', c = near ? cls(Math.abs(T.rel) / lv.aMax) : '';
+    var dark = !!s.blackout && s.status === 'flying';
+    setTx(el['v-alt'], dark ? '--' : T.alt >= 100 ? String(Math.round(T.alt)) : Math.max(0, T.alt).toFixed(1));
+    setTx(el['v-vs'], dark ? '--' : (T.vn >= 0 ? '↓' : '↑') + Math.abs(T.vn).toFixed(Math.abs(T.vn) < 10 ? 1 : 0));
+    setTx(el['v-hs'], dark ? '--' : (T.vt >= 0 ? '→' : '←') + Math.abs(T.vt).toFixed(1));
+    setTx(el['v-tilt'], dark ? '--' : (T.rel >= 0 ? '↶' : '↷') + Math.abs(T.rel * 57.296).toFixed(0));
+    var a = near && !dark ? cls(T.vn / lv.vMax) : '', b = near && !dark ? cls(Math.abs(T.vt) / lv.hMax) : '', c = near && !dark ? cls(Math.abs(T.rel) / lv.aMax) : '';
     if (el['t-vs'].dataset.s !== a) el['t-vs'].dataset.s = a;
     if (el['t-hs'].dataset.s !== b) el['t-hs'].dataset.s = b;
     if (el['t-tilt'].dataset.s !== c) el['t-tilt'].dataset.s = c;
@@ -624,7 +651,11 @@
     el['fuel'].classList.toggle('low', T.fuel < 0.12 && T.fuel > 0);
     // cue
     var cue = el['cue'];
-    if (save.settings.guidance && s.status === 'flying') {
+    if (s.status === 'flying' && s.engineOut) {
+      cue.hidden = false; setTx(cue, 'ENGINE OUT'); if (cue.dataset.s !== '2') cue.dataset.s = '2';
+    } else if (s.status === 'flying' && s.blackout) {
+      cue.hidden = false; setTx(cue, 'NO DATA'); if (cue.dataset.s !== '0') cue.dataset.s = '0';
+    } else if (save.settings.guidance && s.status === 'flying') {
       cue.hidden = false;
       var q = Sim.burnCue(s), st = q, tx;
       if (s.throttle > 0.4) { st = 3; tx = 'BURNING'; } else if (q === 2) tx = 'BURN NOW'; else if (q === 1) tx = 'GET READY'; else tx = 'COAST';
@@ -645,7 +676,7 @@
 
   // ------------------------------------------------------------------ screens
   var screens = {};
-  ['menu', 'levels', 'brief', 'result', 'pause', 'settings'].forEach(function (n) { screens[n] = document.getElementById('s-' + n); });
+  ['menu', 'levels', 'brief', 'result', 'pause', 'settings', 'endless'].forEach(function (n) { screens[n] = document.getElementById('s-' + n); });
   function setScreen(name) {
     Object.keys(screens).forEach(function (k) { screens[k].hidden = k !== name; });
     chrome();
@@ -666,7 +697,7 @@
     var id = nextLevelId(), lv = LV[id - 1], n = cleared();
     $('#m-play-t').textContent = n ? 'Launch' : 'Start';
     $('#m-play-s').textContent = 'Mission ' + id + ' · ' + lv.name;
-    $('#m-progress').textContent = n ? n + ' of ' + LV.length + ' missions cleared · ' + totalStars() + ' of ' + LV.length * 3 + ' stars' : LV.length + ' missions. Wind, swell and a moving deck get harder.';
+    $('#m-progress').textContent = n ? n + ' of ' + LV.length + ' missions cleared · ' + totalStars() + ' of ' + LV.length * 3 + ' stars' : LV.length + ' missions. Wind, swell, and some nasty surprises further on.';
   }
   function buildLevels() {
     var grid = $('#l-grid'); grid.innerHTML = '';
@@ -707,6 +738,7 @@
 
   function fmt(n, d) { return n.toFixed(d === undefined ? 0 : d); }
   function openBrief(id) {
+    G.endless = null;
     var lv = LV[id - 1], sv = lvSave(id);
     G.cur = id; G.seed = (Math.random() * 1e9) | 0;
     newRound(lv, G.seed, false);
@@ -715,7 +747,7 @@
     $('#b-name').textContent = lv.name;
     $('#b-blurb').textContent = lv.blurb;
     var windTx = lv.wind || lv.gust ? Math.round(lv.wind * 10) + (lv.gust ? '–' + Math.round((lv.wind + lv.gust) * 10) : '') + ' kt' : 'Calm';
-    var rows = [['Deck', fmt(lv.deck) + ' m'], ['Swell', fmt(lv.swell, 1) + ' m'], ['Wind', windTx], ['Ship', lv.shipV ? fmt(lv.shipV * 1.94) + ' kt' : 'Holding'], ['Fuel', fmt(lv.fuel * 100) + '%'], ['Start', fmt(lv.alt) + ' m']];
+    var rows = [['Deck', fmt(lv.deck) + ' m'], ['Swell', fmt(lv.swell, 1) + ' m'], ['Wind', windTx], ['Ship', lv.zig ? 'Weaving' : lv.away ? 'Fleeing' : lv.shipV ? fmt(lv.shipV * 1.94) + ' kt' : 'Holding'], ['Fuel', fmt(lv.fuel * 100) + '%' + (lv.leak ? ' leaking' : '')], [lv.thrust < 1 ? 'Engine' : 'Start', lv.thrust < 1 ? fmt(lv.thrust * 100) + '%' : fmt(lv.alt) + ' m']];
     $('#b-specs').innerHTML = rows.map(function (r) { return '<div><dt>' + r[0] + '</dt><dd>' + r[1] + '</dd></div>'; }).join('');
     var goals = [[true, 'Land on the ship', 'Down at ' + lv.vMax + ' m/s or less'], [sv.ring, 'Touch down inside the ring', '±' + fmt(lv.ring) + ' m'], [sv.fuel, 'Land with fuel to spare', fmt(lv.fuelGoal * 100) + '% left']];
     $('#b-goals').innerHTML = goals.map(function (g, i) { return '<li' + (i === 0 ? (sv.done ? ' class="ok"' : '') : (g[0] ? ' class="ok"' : '')) + '>' + (i === 0 ? (sv.done ? CHECK : STAR.replace('{c}', '')) : g[0] ? CHECK : STAR.replace('{c}', '')) + '<span>' + g[1] + '</span><em>' + g[2] + '</em></li>'; }).join('');
@@ -726,18 +758,40 @@
         : '<div><kbd>↑</kbd> or <kbd>Space</kbd> fire the engine. A short tap is a short burn.</div><div><kbd>←</kbd> <kbd>→</kbd> tilt the booster. Lean toward the ship, then burn to move sideways.</div>';
       how += '<div>Light the engine late. Touch down under <b>' + lv.vMax + ' m/s</b>, upright, with legs on the deck. A little too fast still counts as a rough landing.</div>';
     }
+    if (lv.hazard) how = '<div class="tip"><b>Hazard.</b> ' + lv.hazard + '</div>' + how;
     $('#b-how').innerHTML = how; $('#b-how').hidden = !how;
     setScreen('brief');
   }
-  function openLevels() { G.mode = 'levels'; startAttract(); buildLevels(); setScreen('levels'); }
-  function openMenu() { G.mode = 'menu'; startAttract(); buildMenu(); setScreen('menu'); }
+  function openLevels() { G.endless = null; G.mode = 'levels'; startAttract(); buildLevels(); setScreen('levels'); }
+  function openEndless() { G.mode = 'endless'; startAttract(); G.endless = null; setScreen('endless'); }
+  function endlessRound() {
+    var e = G.endless, round = e.round, difficulty = e.difficulty;
+    var seed = (Math.random() * 1e9) | 0, pick = Sim.rng(seed)(), base = LV[(Math.floor(pick * LV.length))];
+    var lv = {}, factor = (difficulty === 'easy' ? 0.82 : difficulty === 'hard' ? 1.22 : 1) * (1 + Math.min(0.4, (round - 1) * 0.025));
+    Object.keys(base).forEach(function (k) { lv[k] = base[k]; });
+    lv.id = 0; lv.name = 'Round ' + round; lv.sky = base.sky;
+    lv.alt = Math.max(700, Math.round(base.alt * (difficulty === 'easy' ? 0.92 : difficulty === 'hard' ? 1.08 : 1)));
+    lv.dx = [base.dx[0] * factor, base.dx[1] * factor];
+    lv.deck = Math.max(42, base.deck / factor);
+    lv.fuel = Math.max(0.3, Math.min(0.95, base.fuel / (difficulty === 'easy' ? 0.82 : difficulty === 'hard' ? 1.2 : 1) * Math.max(0.55, 1 - (round - 1) * 0.02)));
+    lv.fuelGoal = lv.fuel * 0.55;
+    lv.wind = base.wind * factor; lv.gust = base.gust * factor; lv.swell = base.swell * factor;
+    lv.vMax = base.vMax / factor; lv.hMax = base.hMax / factor; lv.aMax = base.aMax / factor;
+    e.seed = seed; e.current = lv;
+    G.cur = 0; G.seed = seed;
+    newRound(lv, seed, true); G.attract = false; G.frozen = false; G.paused = false; G.resultShown = false; G.mode = 'fly'; G.endTimer = 0;
+    resetInput(); Snd.init(); setScreen(null);
+  }
+  function startEndless(difficulty) { G.endless = { difficulty: difficulty, round: 1 }; endlessRound(); }
+  function nextEndless() { G.endless.round++; endlessRound(); }
+  function openMenu() { G.endless = null; G.mode = 'menu'; startAttract(); buildMenu(); setScreen('menu'); }
   function openSettings(from) {
     G.settingsFrom = from; buildToggles($('#s-toggles')); $('#s-reset').textContent = 'Reset progress'; $('#s-reset')._arm = false; setScreen('settings');
   }
 
   function launch() {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    newRound(LV[G.cur - 1], G.seed, true);
+    newRound(G.endless ? G.endless.current : LV[G.cur - 1], G.seed, true);
     G.attract = false; G.frozen = false; G.paused = false; G.resultShown = false; G.mode = 'fly'; G.endTimer = 0;
     resetInput(); Snd.init(); setScreen(null);
   }
@@ -753,6 +807,7 @@
     G.level = lv; G.th = THEMES[lv.sky]; G.clouds = buildClouds(G.th);
     G.sim = Sim.createSim(lv, seed, { assist: save.settings.stability });
     var lm = function (id, v) { var n = document.getElementById(id); if (n) n.textContent = v; };
+    var fg = document.getElementById('fuel-goal'); if (fg) fg.style.left = (lv.fuelGoal * 100).toFixed(1) + '%';
     lm('lim-vs', '\u2264' + lv.vMax); lm('lim-hs', '\u2264' + lv.hMax); lm('lim-tilt', '\u2264' + Math.round(lv.aMax * 57.296) + '\u00B0');
     parts.length = 0; G.acc = 0; G.shake = 0; G.flash = 0; G.D = Sim.deckPose(G.sim);
     updateCamera(0, true);
@@ -776,11 +831,13 @@
     var s = G.sim, r = s.result, lv = G.level, card = $('#r-card'), h = '';
     G.resultShown = true;
     if (r.ok) {
-      var sv0 = lvSave(lv.id), wasNext = lv.id < LV.length && !unlocked(lv.id + 1), prevBest = sv0.best;
-      var rec = save.levels[lv.id] || (save.levels[lv.id] = { done: false, ring: false, fuel: false, best: 0 });
-      rec.done = true; if (r.stars.ring) rec.ring = true; if (r.stars.fuel) rec.fuel = true; if (r.score > rec.best) rec.best = r.score; persist();
+      var endless = G.endless, sv0 = endless ? { best: 0 } : lvSave(lv.id), wasNext = !endless && lv.id < LV.length && !unlocked(lv.id + 1), prevBest = sv0.best;
+      if (!endless) {
+        var rec = save.levels[lv.id] || (save.levels[lv.id] = { done: false, ring: false, fuel: false, best: 0 });
+        rec.done = true; if (r.stars.ring) rec.ring = true; if (r.stars.fuel) rec.fuel = true; if (r.score > rec.best) rec.best = r.score; persist();
+      }
       var side = Math.abs(r.uc) < 0.5 ? 'on the mark' : fmt(Math.abs(r.uc), 1) + ' m off centre';
-      h += '<div style="display:flex;flex-direction:column;gap:6px"><p class="eyebrow">Mission ' + lv.id + ' · ' + lv.name + '</p><h2>' + (r.rough ? 'Rough landing' : 'Touchdown') + '</h2></div>';
+      h += '<div style="display:flex;flex-direction:column;gap:6px"><p class="eyebrow">' + (endless ? 'Endless · ' + endless.difficulty + ' · round ' + endless.round : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + (r.rough ? 'Rough landing' : 'Touchdown') + '</h2></div>';
       h += r.rough ? '<p class="grade warn">Over the limit: ' + roughWhy(r, lv) + ' The legs held, but there are no points for a soft touchdown or attitude.</p>' : '<p class="grade">' + gradeText(r.vn, lv) + '. ' + fmt(r.vn, 1) + ' m/s down, ' + side + '.</p>';
       h += '<ul class="goals"><li class="ok">' + CHECK + '<span>Landed on the ship</span><em>1</em></li>';
       h += '<li class="' + (r.stars.ring ? 'ok' : 'no') + '">' + (r.stars.ring ? CHECK : CROSS) + '<span>Inside the ring (±' + fmt(lv.ring) + ' m)</span><em>' + fmt(Math.abs(r.uc), 1) + ' m</em></li>';
@@ -789,21 +846,33 @@
       h += '<table class="score"><tr><td>Landing</td><td>' + p.landing + '</td></tr><tr><td>Soft touchdown</td><td>+' + p.soft + '</td></tr><tr><td>Centring</td><td>+' + p.centre + '</td></tr><tr><td>Fuel left</td><td>+' + p.fuel + '</td></tr><tr><td>Attitude</td><td>+' + p.attitude + '</td></tr>';
       h += '<tr class="total"><td>Score</td><td><span id="r-score">0</span>' + (r.score > prevBest && prevBest > 0 ? '<span class="tag-new">NEW BEST</span>' : '') + '</td></tr></table>';
       h += '<div class="actions">';
-      if (lv.id < LV.length) h += '<button class="btn primary" id="r-next">Next mission' + (wasNext ? ' · unlocked' : '') + '</button>'; else h += '<button class="btn primary" id="r-levels">All missions</button>';
+      if (endless) h += '<button class="btn primary" id="r-next">Next landing</button>';
+      else if (lv.id < LV.length) h += '<button class="btn primary" id="r-next">Next mission' + (wasNext ? ' · unlocked' : '') + '</button>'; else h += '<button class="btn primary" id="r-levels">All missions</button>';
       h += '<div class="row"><button class="btn" id="r-retry">Fly it again</button>' + (lv.id < LV.length ? '<button class="btn ghost" id="r-levels">Missions</button>' : '') + '</div></div>';
     } else {
-      var m = failMsg(r, lv);
-      h += '<div style="display:flex;flex-direction:column;gap:6px"><p class="eyebrow">Mission ' + lv.id + ' · ' + lv.name + '</p><h2>' + m.title + '</h2></div>';
+      var m = failMsg(r, lv), ht = hazardTip(r, lv); if (ht) m.tip = ht;
+      h += '<div style="display:flex;flex-direction:column;gap:6px"><p class="eyebrow">' + (G.endless ? 'Endless · ' + G.endless.difficulty + ' · ' + (G.endless.round - 1) + ' landed' : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + m.title + '</h2></div>';
       h += '<p class="grade bad">' + m.detail + '</p><div class="tip">' + m.tip + '</div>';
       h += '<div class="actions"><button class="btn primary" id="r-retry">Try again</button><button class="btn ghost" id="r-levels">Missions</button></div>';
     }
     card.innerHTML = h;
     var q = function (id) { return document.getElementById(id); };
-    if (q('r-next')) q('r-next').addEventListener('click', nextMission);
+    if (q('r-next')) q('r-next').addEventListener('click', endless ? nextEndless : nextMission);
     if (q('r-retry')) q('r-retry').addEventListener('click', function () { Snd.click(); retry(); });
     if (q('r-levels')) q('r-levels').addEventListener('click', function () { Snd.click(); openLevels(); });
     setScreen('result');
     if (r.ok) countUp(q('r-score'), r.score);
+  }
+  function hazardTip(r, lv) {
+    var rs = r.reason;
+    if (lv.fault && (rs === 'hard' || rs === 'tilt' || rs === 'sea')) return 'The engine can cut out for a couple of seconds. Start your burn earlier so you have height left to recover.';
+    if (lv.zig && (rs === 'skid' || rs === 'edge')) return 'The ship weaves. Match its sideways speed, not just its position: watch the Sideways reading.';
+    if (lv.away && (rs === 'sea' || rs === 'edge')) return 'The ship keeps moving away. Start chasing it early and aim ahead of it.';
+    if (lv.leak && r.fuelLeft !== undefined && r.fuelLeft <= 0.001) return 'The tank leaks even when the engine is off. Keep the descent short and do not hover.';
+    if (lv.thrust < 1 && rs === 'hard') return 'The engine is weak, so braking takes longer. Light it earlier than you think you need to.';
+    if (lv.rcsR < 1 && (rs === 'tilt' || rs === 'spin' || rs === 'skid')) return 'It turns right slowly. Start right turns earlier, or turn left the long way round.';
+    if (lv.shear && (rs === 'skid' || rs === 'edge' || rs === 'sea')) return 'The wind flips direction low down. Expect to be pushed the other way near the water.';
+    return '';
   }
   function failMsg(r, lv) {
     var dry = r.fuelLeft !== undefined && r.fuelLeft <= 0.001, deg = function (x) { return fmt(Math.abs(x) * 57.296, 0) + '°'; };
@@ -867,6 +936,9 @@
   function on(id, fn) { document.getElementById(id).addEventListener('click', function () { Snd.init(); Snd.click(); fn(); }); }
   on('m-play', function () { openBrief(nextLevelId()); });
   on('m-levels', openLevels);
+  on('m-endless', openEndless);
+  on('e-back', openMenu);
+  Array.prototype.forEach.call(document.querySelectorAll('[data-endless]'), function (b) { b.addEventListener('click', function () { Snd.init(); Snd.click(); startEndless(b.getAttribute('data-endless')); }); });
   on('m-settings', function () { openSettings('menu'); });
   on('l-back', openMenu);
   on('b-go', launch);
@@ -920,13 +992,25 @@
     handleEvents(s);
   }
 
+  // shrink the title if the font it ended up with is wider than the screen
+  function fitLogo() {
+    try {
+      var lg = document.querySelector('.logo'), box = lg && lg.parentNode;
+      if (!lg || !box || !box.clientWidth) return;
+      lg.style.fontSize = '';
+      var fs = parseFloat(window.getComputedStyle(lg).fontSize), need = lg.scrollWidth, have = box.clientWidth;
+      if (need > have && fs) lg.style.fontSize = Math.floor(fs * have / need * 0.97) + 'px';
+    } catch (e) {}
+  }
+
   // ------------------------------------------------------------------ boot
   if (TEST) { TEST.G = G; TEST.key = key; window.__hs = TEST; }
   resize();
-  window.addEventListener('resize', resize);
+  window.addEventListener('resize', function () { resize(); fitLogo(); });
   if (window.ResizeObserver) { try { new ResizeObserver(resize).observe($('#app')); } catch (e) {} }
   startAttract(); openMenu();
-  try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () {}); } catch (e) {}
+  fitLogo();
+  try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitLogo); } catch (e) {}
   requestAnimationFrame(frame);
   try {
     var hot = window.claude && window.claude.hot;

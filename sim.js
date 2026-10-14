@@ -37,9 +37,15 @@
   // vx/vy: start speeds. wind: steady push (m/s^2 at altitude, gusts on top). deck: pad width (m).
   // vMax/hMax/aMax/wMax: touchdown limits (m/s down, m/s sideways, rad tilt, rad/s spin).
   function L(o) {
-    var d = { vMax: 10, hMax: 6, aMax: 0.3, wMax: 0.9, vx: 6, tilt: 0.12, shipV: 0, gust: 0, wind: 0, swell: 0.6, fuel: 1, burn: 0.0125 };
+    // hazards: thrust (engine strength), leak (fuel/s lost for free), tiltMin/om0 (start tumbling), vxAway (start moving away),
+    // away/zig (ship flees / weaves), shear (altitude where the wind flips), fault {hi, lo, d0, d1} (engine cut-out),
+    // blackout [hi, lo] (instrument dropout altitudes), rcsL/rcsR (turn strength each way)
+    var d = { vMax: 10, hMax: 6, aMax: 0.3, wMax: 0.9, vx: 6, tilt: 0.12, tiltMin: 0, om0: 0, shipV: 0, away: false, zig: 0, gust: 0, wind: 0, shear: 0,
+      swell: 0.6, fuel: 1, burn: 0.0125, thrust: 1, leak: 0, vxAway: false, fault: null, blackout: null, rcsL: 1, rcsR: 1, hazard: '' };
     for (var k in o) d[k] = o[k];
-    d.ring = Math.max(7, d.deck * 0.14);
+    d.fuel *= 0.9;
+    if (d.fuelGoal !== undefined) d.fuelGoal *= 0.9;
+    d.ring = o.ring || Math.max(7, d.deck * 0.14);
     return d;
   }
   var LEVELS = [
@@ -47,17 +53,24 @@
     L({ id: 2, name: 'Open Water', sky: 'day', blurb: 'A light breeze. The deck rises and falls with the swell.', alt: 1000, dx: [80, 200], vx: 6, vy: -40, deck: 86, swell: 0.9, wind: 0.5, gust: 0.2, burn: 0.0135, fuelGoal: 0.7 }),
     L({ id: 3, name: 'Crosswind', sky: 'day', blurb: 'Steady wind from the side pushes you off line. Lean into it.', alt: 1000, dx: [100, 220], vx: 7, vy: -40, tilt: 0.15, deck: 82, swell: 1.0, wind: 1.3, gust: 0.5, burn: 0.014, fuelGoal: 0.68 }),
     L({ id: 4, name: 'Long Swell', sky: 'dusk', blurb: 'Big rolling swell. Match your tilt to the tilt of the deck.', alt: 1000, dx: [80, 200], vx: 7, vy: -42, deck: 80, swell: 1.8, wind: 0.6, gust: 0.3, burn: 0.0145, fuelGoal: 0.68 }),
-    L({ id: 5, name: 'Under Way', sky: 'day', blurb: 'The ship is making way. Aim where it will be, not where it is.', alt: 1000, dx: [60, 200], vx: 7, vy: -42, deck: 78, swell: 1.2, wind: 0.8, gust: 0.3, shipV: 2.5, burn: 0.015, fuelGoal: 0.68 }),
-    L({ id: 6, name: 'Gusts', sky: 'dusk', blurb: 'The wind keeps changing its mind. Stay loose on the controls.', alt: 1000, dx: [80, 220], vx: 8, vy: -44, deck: 74, swell: 1.6, wind: 1.4, gust: 1.0, shipV: 2, burn: 0.015, fuelGoal: 0.65, vMax: 9, hMax: 5.5, aMax: 0.27 }),
-    L({ id: 7, name: 'Short Deck', sky: 'dawn', blurb: 'A smaller pad. There is no room to be a little off.', alt: 1000, dx: [60, 180], vx: 6, vy: -42, deck: 60, swell: 1.2, wind: 0.8, gust: 0.3, burn: 0.015, fuelGoal: 0.68, vMax: 9, hMax: 5.5, aMax: 0.27 }),
-    L({ id: 8, name: 'Night Shift', sky: 'night', blurb: 'Dark, rough and windy. Trust the instruments.', alt: 1000, dx: [80, 220], vx: 8, vy: -44, deck: 66, swell: 1.8, wind: 1.6, gust: 0.8, shipV: 1.5, burn: 0.0155, fuelGoal: 0.65, vMax: 9, hMax: 5.5, aMax: 0.27 }),
-    L({ id: 9, name: 'Low Tank', sky: 'day', blurb: 'Half a tank. Hovering is a luxury you cannot afford.', alt: 950, dx: [60, 180], vx: 6, vy: -42, deck: 76, swell: 1.4, wind: 1.0, gust: 0.4, fuel: 0.5, burn: 0.0135, fuelGoal: 0.25, vMax: 9, hMax: 5.5, aMax: 0.27 }),
-    L({ id: 10, name: 'Tide Runner', sky: 'dusk', blurb: 'A fast ship in a heavy sea. Time your touchdown to the swell.', alt: 1000, dx: [80, 220], vx: 8, vy: -46, deck: 64, swell: 2.0, wind: 1.4, gust: 0.6, shipV: 4, fuel: 0.8, burn: 0.0155, fuelGoal: 0.48, vMax: 8, hMax: 5, aMax: 0.25 }),
-    L({ id: 11, name: 'Squall', sky: 'storm', blurb: 'Storm front overhead. Big gusts, short temper.', alt: 1000, dx: [80, 220], vx: 9, vy: -46, deck: 64, swell: 2.4, wind: 1.2, gust: 2.4, fuel: 0.75, burn: 0.0155, fuelGoal: 0.45, vMax: 8, hMax: 5, aMax: 0.25 }),
-    L({ id: 12, name: 'Needle', sky: 'night', blurb: 'The smallest pad you will ever see from this high up.', alt: 1000, dx: [60, 160], vx: 6, vy: -44, deck: 46, swell: 1.5, wind: 0.8, gust: 0.4, shipV: 2, fuel: 0.8, burn: 0.0155, fuelGoal: 0.48, vMax: 8, hMax: 5, aMax: 0.25 }),
-    L({ id: 13, name: 'Hot Drop', sky: 'day', blurb: 'You are coming in fast and late. Light the engine early.', alt: 760, dx: [60, 160], vx: 6, vy: -72, deck: 60, swell: 1.6, wind: 1.0, gust: 0.5, fuel: 0.6, burn: 0.0155, fuelGoal: 0.33, vMax: 7.5, hMax: 4.5, aMax: 0.24 }),
-    L({ id: 14, name: 'Gale Force', sky: 'storm', blurb: 'A full gale and a ship running before it.', alt: 1000, dx: [80, 220], vx: 9, vy: -46, deck: 58, swell: 2.4, wind: 2.4, gust: 1.4, shipV: 3, fuel: 0.8, burn: 0.0158, fuelGoal: 0.45, vMax: 7.5, hMax: 4.5, aMax: 0.22 }),
-    L({ id: 15, name: 'Hoverslam', sky: 'night', blurb: 'Everything at once. One burn, no mistakes.', alt: 820, dx: [60, 180], vx: 7, vy: -80, deck: 50, swell: 2.4, wind: 1.8, gust: 1.2, shipV: 3.5, fuel: 0.62, burn: 0.0158, fuelGoal: 0.32, vMax: 7.5, hMax: 4.5, aMax: 0.22 })
+    L({ id: 5, name: 'Under Way', sky: 'day', blurb: 'The ship is making way. Aim where it will be, not where it is.', alt: 1000, dx: [60, 200], vx: 7, vy: -42, deck: 78, swell: 1.2, wind: 0.8, gust: 0.3, shipV: 2.5, burn: 0.015, fuelGoal: 0.72 }),
+    L({ id: 6, name: 'Gusts', sky: 'dusk', blurb: 'The wind keeps changing its mind. Stay loose on the controls.', alt: 1000, dx: [80, 220], vx: 8, vy: -44, deck: 74, swell: 1.6, wind: 1.4, gust: 1.0, shipV: 2, burn: 0.015, fuelGoal: 0.7, ring: 9, vMax: 9, hMax: 5.5, aMax: 0.27 }),
+    L({ id: 7, name: 'Short Deck', sky: 'dawn', blurb: 'A smaller pad. There is no room to be a little off.', alt: 1000, dx: [60, 180], vx: 6, vy: -42, deck: 60, swell: 1.2, wind: 0.8, gust: 0.3, burn: 0.015, fuelGoal: 0.72, ring: 8, vMax: 9, hMax: 5.5, aMax: 0.27 }),
+    L({ id: 8, name: 'Night Shift', sky: 'night', blurb: 'Dark, rough and windy. Trust the instruments.', alt: 1000, dx: [80, 220], vx: 8, vy: -44, deck: 66, swell: 1.8, wind: 1.6, gust: 0.8, shipV: 1.5, burn: 0.0155, fuelGoal: 0.7, ring: 8, vMax: 9, hMax: 5.5, aMax: 0.27 }),
+    L({ id: 9, name: 'Low Tank', sky: 'day', blurb: 'Under half a tank. Hovering is a luxury you cannot afford.', hazard: 'Fuel is tight. Burn in pulses and save some for the last 100 metres.', alt: 950, dx: [60, 180], vx: 6, vy: -42, deck: 76, swell: 1.4, wind: 1.0, gust: 0.4, fuel: 0.45, burn: 0.0135, fuelGoal: 0.22, ring: 8, vMax: 9, hMax: 5.5, aMax: 0.27 }),
+    L({ id: 10, name: 'Runaway', sky: 'day', blurb: 'The ship has spotted you and is steaming away.', hazard: 'The ship sails away from you the whole way down. Start chasing it early.', alt: 1100, dx: [90, 200], vx: 6, vy: -44, deck: 70, swell: 1.4, wind: 0.8, gust: 0.4, shipV: 5, away: true, fuel: 0.85, burn: 0.0155, fuelGoal: 0.54, ring: 7, vMax: 8.5, hMax: 5, aMax: 0.26 }),
+    L({ id: 11, name: 'Tumble', sky: 'dusk', blurb: 'Separation went wrong. You are nearly sideways and spinning.', hazard: 'You start almost horizontal and spinning. Get upright before the speed builds.', alt: 1150, dx: [60, 160], vx: 5, vy: -40, tiltMin: 1.0, tilt: 1.35, om0: 0.7, deck: 72, swell: 1.6, wind: 0.8, gust: 0.4, fuel: 0.9, burn: 0.0155, fuelGoal: 0.59, ring: 7, vMax: 8.5, hMax: 5, aMax: 0.26 }),
+    L({ id: 12, name: 'Shear', sky: 'storm', blurb: 'Rough air up high, and something odd near the water.', hazard: 'The wind flips direction low down. What pushed you left now pushes you right.', alt: 1000, dx: [80, 220], vx: 9, vy: -46, deck: 64, swell: 2.4, wind: 1.4, gust: 1.8, shear: 380, fuel: 0.75, burn: 0.0155, fuelGoal: 0.48, ring: 6.5, vMax: 8, hMax: 5, aMax: 0.25 }),
+    L({ id: 13, name: 'Long Shot', sky: 'dawn', blurb: 'Way out on the edge of the recovery zone, and heading further out.', hazard: 'You start hundreds of metres away, drifting the wrong way. Turn around early.', alt: 1500, dx: [380, 520], vx: 14, vxAway: true, vy: -40, deck: 66, swell: 1.2, wind: 0.6, gust: 0.3, shipV: 1.5, fuel: 0.9, burn: 0.0155, fuelGoal: 0.56, ring: 7, vMax: 8, hMax: 5, aMax: 0.25 }),
+    L({ id: 14, name: 'Flameout', sky: 'night', blurb: 'Something in the engine bay is not right.', hazard: 'The engine can cut out for a couple of seconds during your descent. Do not leave your burn too late.', alt: 1000, dx: [80, 200], vx: 7, vy: -48, deck: 70, swell: 1.6, wind: 0.8, gust: 0.4, shipV: 1.5, fault: { hi: 540, lo: 340, d0: 1.4, d1: 2.0 }, fuel: 0.9, burn: 0.0155, fuelGoal: 0.63, ring: 6.5, vMax: 8, hMax: 5, aMax: 0.25 }),
+    L({ id: 15, name: 'Hot Drop', sky: 'day', blurb: 'You are coming in fast and late. Light the engine early.', hazard: 'Very high entry speed. The burn has to start much earlier than feels right.', alt: 760, dx: [60, 160], vx: 6, vy: -72, deck: 60, swell: 1.6, wind: 1.0, gust: 0.5, fuel: 0.6, burn: 0.0155, fuelGoal: 0.39, ring: 6, vMax: 7.5, hMax: 4.5, aMax: 0.24 }),
+    L({ id: 16, name: 'Needle', sky: 'night', blurb: 'The smallest pad you will ever see from this high up.', hazard: 'A very small pad and a ship that keeps creeping along.', alt: 1000, dx: [60, 160], vx: 6, vy: -44, deck: 46, swell: 1.5, wind: 0.8, gust: 0.4, shipV: 2, fuel: 0.8, burn: 0.0155, fuelGoal: 0.55, ring: 5, vMax: 8, hMax: 5, aMax: 0.25 }),
+    L({ id: 17, name: 'Heavy Haul', sky: 'day', blurb: 'The payload is still on board. Everything takes longer.', hazard: 'Weak engine: you can barely out-push gravity. Brake much earlier, and do not waste thrust.', alt: 1000, dx: [80, 200], vx: 7, vy: -42, deck: 66, swell: 1.6, wind: 1.0, gust: 0.5, thrust: 0.78, fuel: 0.9, burn: 0.0155, fuelGoal: 0.53, ring: 6, vMax: 7.5, hMax: 4.5, aMax: 0.24 }),
+    L({ id: 18, name: 'Sticky Thruster', sky: 'dusk', blurb: 'One of the cold-gas thrusters is clogged.', hazard: 'The booster turns right much more slowly than left. Plan your turns early.', alt: 1000, dx: [80, 220], vx: 8, vy: -44, tiltMin: 0.25, tilt: 0.5, deck: 66, swell: 1.8, wind: 1.4, gust: 0.8, rcsR: 0.6, fuel: 0.85, burn: 0.0155, fuelGoal: 0.59, ring: 6, vMax: 7.5, hMax: 4.5, aMax: 0.24 }),
+    L({ id: 19, name: 'Leaky Tank', sky: 'dawn', blurb: 'There is a hole in the tank and fuel is pouring out.', hazard: 'Fuel drains steadily even when the engine is off. Do not hang about.', alt: 1000, dx: [80, 200], vx: 7, vy: -46, deck: 66, swell: 1.6, wind: 1.0, gust: 0.5, shipV: 2, leak: 0.0045, fuel: 0.75, burn: 0.0155, fuelGoal: 0.41, ring: 6, vMax: 7.5, hMax: 4.5, aMax: 0.24 }),
+    L({ id: 20, name: 'Evasive', sky: 'day', blurb: 'The captain is zigzagging to dodge the swell. Good luck.', hazard: 'The ship weaves left and right at speed. Match its sideways speed or you will skid.', alt: 1000, dx: [60, 180], vx: 7, vy: -44, deck: 66, swell: 2.8, wind: 0.8, gust: 0.5, shipV: 6.5, zig: 0.4, fuel: 0.85, burn: 0.0155, fuelGoal: 0.58, ring: 6, vMax: 7.5, hMax: 4.2, aMax: 0.22 }),
+    L({ id: 21, name: 'Blackout', sky: 'night', blurb: 'A storm and a failing instrument panel.', hazard: 'Your readouts and guidance drop out for a few seconds near the end. Trust your eyes.', alt: 1000, dx: [80, 220], vx: 8, vy: -46, deck: 62, swell: 2.4, wind: 1.4, gust: 1.4, shipV: 2.5, blackout: [460, 160], fuel: 0.8, burn: 0.0155, fuelGoal: 0.54, ring: 5.5, vMax: 7, hMax: 4.2, aMax: 0.22 }),
+    L({ id: 22, name: 'Hoverslam', sky: 'night', blurb: 'Everything at once. One burn, no mistakes.', hazard: 'Tumbling start, a fleeing ship, a weak engine that can cut out, a gale and a tiny pad.', alt: 1150, dx: [80, 180], vx: 7, vy: -56, tiltMin: 0.6, tilt: 1.1, om0: 0.5, deck: 50, swell: 2.4, wind: 1.6, gust: 1.0, shipV: 3.5, away: true, thrust: 0.92, fault: { hi: 520, lo: 340, d0: 1.2, d1: 1.8 }, fuel: 0.72, burn: 0.0158, fuelGoal: 0.45, ring: 5, vMax: 6.5, hMax: 4, aMax: 0.2 })
   ];
 
   // ---------------------------------------------------------------- environment
@@ -83,7 +96,9 @@
     var lv = s.level;
     var g = lv.gust * (0.6 * Math.sin(0.55 * t + s.wp1) + 0.4 * Math.sin(1.7 * t + s.wp2));
     var f = 0.3 + 0.7 * (1 - Math.exp(-Math.max(y, 0) / 300));
-    return (s.wind0 + g) * f;
+    var m = 1;
+    if (lv.shear) m = 1 - 2.3 * clamp((lv.shear * 1.2 - y) / (lv.shear * 0.4), 0, 1);   // flips to -1.3 below the shear line
+    return (s.wind0 + g) * f * m;
   }
   function dragK(y) { return 0.00045 * Math.exp(-Math.max(y, 0) / 3500); }
 
@@ -123,7 +138,7 @@
     return Math.min(toDeck(D, f[0].x, f[0].y).v, toDeck(D, f[1].x, f[1].y).v);
   }
   function massRatio(s) { return 0.7 + 0.3 * s.fuel; }
-  function maxAccel(s) { return THRUST / massRatio(s); }
+  function maxAccel(s) { return THRUST * s.level.thrust / massRatio(s); }
 
   // ---------------------------------------------------------------- creation
   function createSim(level, seed, opts) {
@@ -143,14 +158,21 @@
     s.y = FREEBOARD + level.alt;
     s.vx = (r() * 2 - 1) * level.vx;
     s.vy = level.vy;
-    s.th = (r() * 2 - 1) * level.tilt;
+    var tu = r() * 2 - 1;
+    s.th = (tu < 0 ? -1 : 1) * (level.tiltMin + (level.tilt - level.tiltMin) * Math.abs(tu));
+    if (level.vxAway) s.vx = (s.x < 0 ? -1 : 1) * level.vx * (0.8 + 0.4 * r());
+    if (level.away) { s.ship.v = -(s.x < 0 ? -1 : 1) * level.shipV; s.ship.vNow = s.ship.v; }
+    if (level.om0) s.om = (r() < 0.5 ? -1 : 1) * level.om0;
+    if (level.fault) s.fault = { at: level.fault.lo + (level.fault.hi - level.fault.lo) * r(), dur: level.fault.d0 + (level.fault.d1 - level.fault.d0) * r(), state: 'armed', until: 0 };
+    s.engineOut = false; s.blackout = false;
     return s;
   }
 
   // ---------------------------------------------------------------- stepping
   function advanceTime(s, dt) {
     s.t += dt;
-    s.ship.vNow = s.ship.v * (1 + 0.2 * Math.sin(0.5 * s.t + s.ship.ph));
+    var lv = s.level;
+    s.ship.vNow = lv.zig ? lv.shipV * Math.sin(lv.zig * s.t + s.ship.ph) : s.ship.v * (1 + 0.2 * Math.sin(0.5 * s.t + s.ship.ph));
     s.ship.x += s.ship.vNow * dt;
   }
 
@@ -167,10 +189,18 @@
     s.throttle += clamp(target - s.throttle, -rate * dt, rate * dt);
     if (s.fuel <= 0) s.throttle = 0;
 
+    // engine cut-out
+    if (s.fault) {
+      var F = s.fault;
+      if (F.state === 'armed' && s.alt !== undefined && s.alt < F.at) { F.state = 'active'; F.until = s.t + F.dur; s.engineOut = true; s.events.push('fault'); }
+      else if (F.state === 'active' && s.t >= F.until) { F.state = 'done'; s.engineOut = false; s.events.push('relight'); }
+      if (s.engineOut) s.throttle = 0;
+    }
+
     // attitude
     var rot = (inp.left ? 1 : 0) - (inp.right ? 1 : 0);
     s.rot = rot;
-    s.om += ROT_ACC * rot * dt;
+    s.om += ROT_ACC * (rot > 0 ? lv.rcsL : lv.rcsR) * rot * dt;
     s.om *= Math.exp(-(rot === 0 && s.assist ? ASSIST_DAMP : 0.1) * dt);
     s.om = clamp(s.om, -ROT_MAX, ROT_MAX);
     s.th += s.om * dt;
@@ -182,13 +212,14 @@
     var ay = Math.cos(s.th) * aT - G - kd * sp * s.vy;
     s.vx += ax * dt; s.vy += ay * dt;
     s.x += s.vx * dt; s.y += s.vy * dt;
-    s.fuel = Math.max(0, s.fuel - lv.burn * s.throttle * dt);
+    s.fuel = Math.max(0, s.fuel - (lv.burn * s.throttle + lv.leak) * dt);
     if (s.throttle > 0.05) s.burnTime += dt;
 
     var D = deckPose(s);
     s.D = D;
     var alt = altitude(s, D);
     s.alt = alt;
+    if (lv.blackout) s.blackout = alt < lv.blackout[0] && alt > lv.blackout[1];
 
     // landing legs
     if (!s.legsStarted && alt < LEG_ALT) { s.legsStarted = true; s.events.push('legs'); }
@@ -325,7 +356,7 @@
     var T = telemetry(s);
     if (T.vn < 12 || s.throttle > 0.4) return 0;
     var aNet = Math.max(2, maxAccel(s) * Math.max(0.6, Math.cos(s.th)) - G);
-    var d = T.vn * T.vn / (2 * aNet);
+    var d = T.vn * T.vn / (2 * aNet) * (s.level.fault ? 1.4 : 1);
     if (T.alt < d * 1.12) return 2;
     if (T.alt < d * 1.7) return 1;
     return 0;
@@ -341,7 +372,7 @@
       vy += (-G - kd * sp * vy) * dt;
       x += vx * dt; y += vy * dt; t += dt;
       pts.push({ x: x, y: y });
-      var xs = s.ship.x + s.ship.v * (t - s.t);
+      var xs = s.ship.x + (lv.zig ? 0 : s.ship.v * (t - s.t));
       if (y - 17.8 * c <= FREEBOARD) {
         hit = { x: x, y: FREEBOARD, t: t - s.t, xs: xs, on: Math.abs(x - xs) <= lv.deck / 2 };
         break;

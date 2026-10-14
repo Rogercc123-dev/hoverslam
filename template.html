@@ -85,7 +85,7 @@
   }
   .menu-top { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
   .logo {
-    font: 900 clamp(68px, 21vw, 168px)/0.84 var(--font-display); letter-spacing: -0.005em; text-transform: uppercase; margin: 0;
+    font: 900 clamp(48px, 17vw, 168px)/0.84 var(--font-display); letter-spacing: -0.005em; text-transform: uppercase; margin: 0; white-space: nowrap;
     text-shadow: 0 4px 40px rgba(0, 0, 0, 0.35);
   }
   .logo span { display: block; height: 0.08em; margin-top: 0.08em; width: 100%; background: repeating-linear-gradient(90deg, var(--flame) 0 0.34em, transparent 0.34em 0.5em); }
@@ -174,6 +174,8 @@
 
   /* ---------- HUD ---------- */
   .hud { position: absolute; inset: 0 0 auto 0; z-index: 10; padding: 12px 16px 0; pointer-events: none; display: flex; flex-direction: column; gap: 10px; }
+  .hud::before { content: ""; position: absolute; inset: 0 0 -44px 0; z-index: -1; pointer-events: none; background: linear-gradient(180deg, rgba(5, 12, 22, 0.6), rgba(5, 12, 22, 0.28) 62%, rgba(5, 12, 22, 0)); }
+  .t .k, .t .u, .fuel .lab, .wind { text-shadow: 0 1px 6px rgba(0, 0, 0, 0.75); }
   .hud-row { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
   .tele { display: grid; grid-template-columns: repeat(2, minmax(78px, auto)); gap: 4px 16px; min-width: 0; }
   .t { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
@@ -269,8 +271,23 @@
     </div>
     <div class="menu-bottom">
       <button class="btn primary stack" id="m-play"><span id="m-play-t">Launch</span><small id="m-play-s"></small></button>
+      <button class="btn" id="m-endless">Endless mode</button>
       <div class="row"><button class="btn" id="m-levels">Missions</button><button class="btn ghost" id="m-settings">Settings</button></div>
       <p class="foot" id="m-progress"></p>
+    </div>
+  </section>
+
+  <section id="s-endless" class="screen sheet" hidden>
+    <div class="card">
+      <p class="eyebrow">Keep the booster coming</p>
+      <h2>Endless mode</h2>
+      <p>Land on a new ship each round. How long can you last?</p>
+      <div class="actions">
+        <button class="btn primary" data-endless="easy">Easy <small>Roomier decks · more fuel</small></button>
+        <button class="btn" data-endless="medium">Medium <small>Balanced challenge</small></button>
+        <button class="btn" data-endless="hard">Hard <small>Rough conditions · tight fuel</small></button>
+        <button class="btn ghost" id="e-back">Back</button>
+      </div>
     </div>
   </section>
 
