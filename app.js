@@ -351,7 +351,6 @@
       else if (e === 'flip') {
         fxFlip(s);
         if (G.endless) { G.endless.score += 100; G.endless.flips++; }
-        showSecret('flip', 'FLIP BONUS · +100 STYLE');
       }
       else if (e === 'crash') fxCrash(s);
       else if (e === 'splash') fxSplash(s);

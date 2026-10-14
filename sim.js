@@ -57,8 +57,8 @@
     var d = { vMax: 10, hMax: 6, aMax: 0.3, wMax: 0.9, vx: 6, tilt: 0.12, tiltMin: 0, om0: 0, shipV: 0, away: false, zig: 0, gust: 0, wind: 0, shear: 0,
       swell: 0.6, fuel: 1, burn: 0.0125, thrust: 1, leak: 0, vxAway: false, fault: null, blackout: null, rcsL: 1, rcsR: 1, hazard: '' };
     for (var k in o) d[k] = o[k];
-    d.fuel *= 0.9;
-    if (d.fuelGoal !== undefined) d.fuelGoal *= 0.9;
+    d.fuel *= 0.9 * 0.82;
+    if (d.fuelGoal !== undefined) d.fuelGoal *= 0.9 * 0.82;
     d.ring = o.ring || Math.max(7, d.deck * 0.14);
     return d;
   }
