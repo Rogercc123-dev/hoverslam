@@ -20,6 +20,7 @@
 
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
   function sign(v) { return v < 0 ? -1 : 1; }
+  function wrapAngle(v) { v = (v + Math.PI) % (Math.PI * 2); if (v < 0) v += Math.PI * 2; return v - Math.PI; }
 
   function rng(seed) {
     var a = (seed >>> 0) || 1;
@@ -261,7 +262,7 @@
     var rvx = s.vx - D.vx, rvy = s.vy - D.vy;
     var vn = Math.max(0, -(-rvx * D.sn + rvy * D.c));
     var vt = rvx * D.c + rvy * D.sn;
-    var rel = s.th - D.phi;
+    var rel = wrapAngle(s.th - D.phi);
     var uc = toDeck(D, s.x, s.y).u;
     var info = { vn: vn, vt: vt, rel: rel, om: s.om, uc: uc, fuelLeft: s.fuel, t: s.t, burnTime: s.burnTime, legs: s.legs };
     if (s.legs < 0.9) return finish(s, D, 'legs', uc, info);
@@ -343,7 +344,7 @@
       alt: alt,
       vn: -(-rvx * D.sn + rvy * D.c),         // positive = descending towards the deck
       vt: rvx * D.c + rvy * D.sn,
-      rel: s.th - D.phi,
+      rel: wrapAngle(s.th - D.phi),
       dx: s.x - D.x,
       u: q.u,
       fuel: s.fuel,
@@ -413,9 +414,9 @@
       thr = Math.hypot(axd, Math.max(ayTotal, Math.abs(axd) / tanMax)) / aMax;
     }
     thr = clamp(thr, 0, 1);
-    if (Math.abs(s.th - thD) > 0.4 && alt > 400) thr = 0;
+    if (Math.abs(wrapAngle(s.th - thD)) > 0.4 && alt > 400) thr = 0;
 
-    var wd = clamp(4.0 * (thD - s.th), -1.0, 1.0);
+    var wd = clamp(4.0 * wrapAngle(thD - s.th), -1.0, 1.0);
     var err = wd - s.om;
     return { thrust: thr, left: err > 0.12, right: err < -0.12 };
   }

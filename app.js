@@ -33,13 +33,14 @@
   // ------------------------------------------------------------------ progress
   var KEY = 'hoverslam.v1';
   var REV = 2;   // rev 2 replaced missions 10 and up, so progress on those from older saves is dropped
-  var save = { rev: REV, levels: {}, settings: { sound: true, stability: true, guidance: true, haptics: true } };
+  var save = { rev: REV, levels: {}, endless: {}, settings: { sound: true, stability: true, guidance: true, haptics: true } };
   try {
     var raw = localStorage.getItem(KEY);
     if (raw) {
       var j = JSON.parse(raw);
       if (j && typeof j === 'object') {
         if (j.levels && typeof j.levels === 'object') save.levels = j.levels;
+        if (j.endless && typeof j.endless === 'object') save.endless = j.endless;
         if ((j.rev | 0) < REV) for (var lid in save.levels) if (+lid >= 10) delete save.levels[lid];
         if (j.settings && typeof j.settings === 'object') for (var k in save.settings) if (typeof j.settings[k] === 'boolean') save.settings[k] = j.settings[k];
       }
@@ -144,7 +145,8 @@
     mode: 'boot', level: LV[0], sim: null, seed: 1, cur: 1, attract: true, frozen: false, paused: false, acc: 0,
     camX: 0, camY: 800, lz: Math.log(0.4), camZ: 0.4, shake: 0, flash: 0, endTimer: 0, resultShown: false,
     clouds: [], D: null, hintT: 0, hintGone: false, attractWait: 0, lowBeep: 0, th: THEMES.dusk,
-    endless: null
+    endless: null, transitionTime: 0, secretTime: 0, secretSeen: {},
+    highEgg: false, flipEgg: false
   };
   function sx(x) { return W / 2 + (x - G.camX) * G.camZ; }
   function sy(y) { return H / 2 - (y - G.camY) * G.camZ; }
@@ -673,10 +675,16 @@
     // low-fuel beep
     if (s.status === 'flying' && T.fuel > 0 && T.fuel < 0.1) { G.lowBeep -= dt; if (G.lowBeep <= 0) { Snd.beep(); G.lowBeep = 0.9; } }
   }
+  function showSecret(id, message) {
+    if (G.secretSeen[id]) return;
+    G.secretSeen[id] = true; G.secretTime = 3.2;
+    var toast = $('#easter-egg'); toast.textContent = message; toast.hidden = false;
+    toast.classList.remove('pop'); void toast.offsetWidth; toast.classList.add('pop');
+  }
 
   // ------------------------------------------------------------------ screens
   var screens = {};
-  ['menu', 'levels', 'brief', 'result', 'pause', 'settings', 'endless'].forEach(function (n) { screens[n] = document.getElementById('s-' + n); });
+  ['menu', 'levels', 'brief', 'result', 'pause', 'settings', 'endless', 'transition'].forEach(function (n) { screens[n] = document.getElementById('s-' + n); });
   function setScreen(name) {
     Object.keys(screens).forEach(function (k) { screens[k].hidden = k !== name; });
     chrome();
@@ -764,7 +772,7 @@
   }
   function openLevels() { G.endless = null; G.mode = 'levels'; startAttract(); buildLevels(); setScreen('levels'); }
   function openEndless() { G.mode = 'endless'; startAttract(); G.endless = null; setScreen('endless'); }
-  function endlessRound() {
+  function endlessRound(transition) {
     var e = G.endless, round = e.round, difficulty = e.difficulty;
     var seed = (Math.random() * 1e9) | 0, pick = Sim.rng(seed)(), base = LV[(Math.floor(pick * LV.length))];
     var lv = {}, factor = (difficulty === 'easy' ? 0.82 : difficulty === 'hard' ? 1.22 : 1) * (1 + Math.min(0.4, (round - 1) * 0.025));
@@ -776,14 +784,27 @@
     lv.fuel = Math.max(0.3, Math.min(0.95, base.fuel / (difficulty === 'easy' ? 0.82 : difficulty === 'hard' ? 1.2 : 1) * Math.max(0.55, 1 - (round - 1) * 0.02)));
     lv.fuelGoal = lv.fuel * 0.55;
     lv.wind = base.wind * factor; lv.gust = base.gust * factor; lv.swell = base.swell * factor;
-    lv.vMax = base.vMax / factor; lv.hMax = base.hMax / factor; lv.aMax = base.aMax / factor;
+    var toHalf = function (n) { return Math.round(n * 2) / 2; };
+    lv.vMax = Math.max(4, toHalf(base.vMax / factor));
+    lv.hMax = Math.max(2.5, toHalf(base.hMax / factor));
+    lv.aMax = Math.max(0.12, Math.round(base.aMax / factor * 57.296 / 5) * 5 * Math.PI / 180);
     e.seed = seed; e.current = lv;
     G.cur = 0; G.seed = seed;
-    newRound(lv, seed, true); G.attract = false; G.frozen = false; G.paused = false; G.resultShown = false; G.mode = 'fly'; G.endTimer = 0;
-    resetInput(); Snd.init(); setScreen(null);
+    newRound(lv, seed, true); G.attract = false; G.frozen = false; G.paused = false; G.resultShown = false; G.mode = transition ? 'transition' : 'fly'; G.endTimer = 0;
+    resetInput(); Snd.init();
+    if (transition) {
+      G.transitionTime = 0;
+      $('#e-progress').style.transform = 'scaleX(0)';
+      $('#e-next-round').textContent = String(round).padStart(2, '0');
+      $('#e-next-difficulty').textContent = difficulty + ' · ' + base.name;
+      setScreen('transition');
+    } else setScreen(null);
   }
-  function startEndless(difficulty) { G.endless = { difficulty: difficulty, round: 1 }; endlessRound(); }
-  function nextEndless() { G.endless.round++; endlessRound(); }
+  function startEndless(difficulty) {
+    G.endless = { difficulty: difficulty, round: 1, landed: 0, score: 0, bestLanding: 0, verticalSum: 0, fuelSum: 0, startedAt: performance.now() };
+    G.highEgg = false; G.flipEgg = false; endlessRound(false);
+  }
+  function nextEndless() { Snd.click(); G.endless.round++; endlessRound(true); }
   function openMenu() { G.endless = null; G.mode = 'menu'; startAttract(); buildMenu(); setScreen('menu'); }
   function openSettings(from) {
     G.settingsFrom = from; buildToggles($('#s-toggles')); $('#s-reset').textContent = 'Reset progress'; $('#s-reset')._arm = false; setScreen('settings');
@@ -808,7 +829,8 @@
     G.sim = Sim.createSim(lv, seed, { assist: save.settings.stability });
     var lm = function (id, v) { var n = document.getElementById(id); if (n) n.textContent = v; };
     var fg = document.getElementById('fuel-goal'); if (fg) fg.style.left = (lv.fuelGoal * 100).toFixed(1) + '%';
-    lm('lim-vs', '\u2264' + lv.vMax); lm('lim-hs', '\u2264' + lv.hMax); lm('lim-tilt', '\u2264' + Math.round(lv.aMax * 57.296) + '\u00B0');
+    lm('lim-vs', '\u2264' + fmt(lv.vMax, 1)); lm('lim-hs', '\u2264' + fmt(lv.hMax, 1)); lm('lim-tilt', '\u2264' + Math.round(lv.aMax * 57.296) + '\u00B0');
+    G.highEgg = false; G.flipEgg = false;
     parts.length = 0; G.acc = 0; G.shake = 0; G.flash = 0; G.D = Sim.deckPose(G.sim);
     updateCamera(0, true);
   }
@@ -822,8 +844,8 @@
   function gradeText(vn, lv) { var f = vn / lv.vMax; return f < 0.2 ? 'Feather-soft touchdown' : f < 0.45 ? 'Smooth touchdown' : f < 0.75 ? 'Firm touchdown' : 'Hard, but inside the limit'; }
   function roughWhy(r, lv) {
     var deg = function (x) { return fmt(Math.abs(x) * 57.296, 0) + '\u00B0'; };
-    if (r.over === 'hard') return fmt(r.vn, 1) + ' m/s down (limit ' + lv.vMax + ').';
-    if (r.over === 'skid') return fmt(Math.abs(r.vt), 1) + ' m/s sideways (limit ' + lv.hMax + ').';
+    if (r.over === 'hard') return fmt(r.vn, 1) + ' m/s down (limit ' + fmt(lv.vMax, 1) + ').';
+    if (r.over === 'skid') return fmt(Math.abs(r.vt), 1) + ' m/s sideways (limit ' + fmt(lv.hMax, 1) + ').';
     if (r.over === 'tilt') return deg(r.rel) + ' off level (limit ' + deg(lv.aMax) + ').';
     return 'a spin at touchdown.';
   }
@@ -835,9 +857,13 @@
       if (!endless) {
         var rec = save.levels[lv.id] || (save.levels[lv.id] = { done: false, ring: false, fuel: false, best: 0 });
         rec.done = true; if (r.stars.ring) rec.ring = true; if (r.stars.fuel) rec.fuel = true; if (r.score > rec.best) rec.best = r.score; persist();
+      } else {
+        endless.landed++; endless.score += r.score; endless.bestLanding = Math.max(endless.bestLanding, r.score);
+        endless.verticalSum += Math.abs(r.vn); endless.fuelSum += r.fuelLeft;
       }
       var side = Math.abs(r.uc) < 0.5 ? 'on the mark' : fmt(Math.abs(r.uc), 1) + ' m off centre';
-      h += '<div style="display:flex;flex-direction:column;gap:6px"><p class="eyebrow">' + (endless ? 'Endless · ' + endless.difficulty + ' · round ' + endless.round : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + (r.rough ? 'Rough landing' : 'Touchdown') + '</h2></div>';
+      h += '<div class="result-head"><p class="eyebrow">' + (endless ? 'Endless · ' + endless.difficulty + ' · round ' + endless.round : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + (endless ? (r.rough ? 'Rough landing' : 'Round clear') : (r.rough ? 'Rough landing' : 'Touchdown')) + '</h2></div>';
+      if (endless) h += '<div class="arcade-stats"><div><b>' + String(endless.landed).padStart(2, '0') + '</b><span>LANDINGS</span></div><div><b id="r-total-score">' + endless.score + '</b><span>RUN SCORE</span></div></div>';
       h += r.rough ? '<p class="grade warn">Over the limit: ' + roughWhy(r, lv) + ' The legs held, but there are no points for a soft touchdown or attitude.</p>' : '<p class="grade">' + gradeText(r.vn, lv) + '. ' + fmt(r.vn, 1) + ' m/s down, ' + side + '.</p>';
       h += '<ul class="goals"><li class="ok">' + CHECK + '<span>Landed on the ship</span><em>1</em></li>';
       h += '<li class="' + (r.stars.ring ? 'ok' : 'no') + '">' + (r.stars.ring ? CHECK : CROSS) + '<span>Inside the ring (±' + fmt(lv.ring) + ' m)</span><em>' + fmt(Math.abs(r.uc), 1) + ' m</em></li>';
@@ -846,20 +872,31 @@
       h += '<table class="score"><tr><td>Landing</td><td>' + p.landing + '</td></tr><tr><td>Soft touchdown</td><td>+' + p.soft + '</td></tr><tr><td>Centring</td><td>+' + p.centre + '</td></tr><tr><td>Fuel left</td><td>+' + p.fuel + '</td></tr><tr><td>Attitude</td><td>+' + p.attitude + '</td></tr>';
       h += '<tr class="total"><td>Score</td><td><span id="r-score">0</span>' + (r.score > prevBest && prevBest > 0 ? '<span class="tag-new">NEW BEST</span>' : '') + '</td></tr></table>';
       h += '<div class="actions">';
-      if (endless) h += '<button class="btn primary" id="r-next">Next landing</button>';
+      if (endless) h += '<button class="btn primary" id="r-next">Next descent <small>Round ' + String(endless.round + 1).padStart(2, '0') + '</small></button>';
       else if (lv.id < LV.length) h += '<button class="btn primary" id="r-next">Next mission' + (wasNext ? ' · unlocked' : '') + '</button>'; else h += '<button class="btn primary" id="r-levels">All missions</button>';
-      h += '<div class="row"><button class="btn" id="r-retry">Fly it again</button>' + (lv.id < LV.length ? '<button class="btn ghost" id="r-levels">Missions</button>' : '') + '</div></div>';
+      h += '<div class="row"><button class="btn" id="r-retry">' + (endless ? 'Restart run' : 'Fly it again') + '</button>' + (lv.id < LV.length ? '<button class="btn ghost" id="r-levels">Missions</button>' : '') + '</div></div>';
     } else {
       var m = failMsg(r, lv), ht = hazardTip(r, lv); if (ht) m.tip = ht;
-      h += '<div style="display:flex;flex-direction:column;gap:6px"><p class="eyebrow">' + (G.endless ? 'Endless · ' + G.endless.difficulty + ' · ' + (G.endless.round - 1) + ' landed' : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + m.title + '</h2></div>';
-      h += '<p class="grade bad">' + m.detail + '</p><div class="tip">' + m.tip + '</div>';
-      h += '<div class="actions"><button class="btn primary" id="r-retry">Try again</button><button class="btn ghost" id="r-levels">Missions</button></div>';
+      if (G.endless) {
+        var e = G.endless, seconds = Math.floor((performance.now() - e.startedAt) / 1000), mins = Math.floor(seconds / 60), best = save.endless[e.difficulty] || { rounds: 0, score: 0 };
+        var newBest = e.landed > best.rounds || (e.landed === best.rounds && e.score > best.score);
+        if (newBest) { best = { rounds: e.landed, score: e.score }; save.endless[e.difficulty] = best; persist(); }
+        h += '<div class="result-head death-head"><p class="eyebrow">' + e.difficulty + ' run · ' + (newBest ? 'new personal best' : 'best: ' + best.rounds + ' landings') + '</p><h2>Run over</h2></div>';
+        h += '<p class="death-cause"><b>' + m.title + '</b><span>' + m.detail + '</span></p>';
+        h += '<div class="arcade-stats death-stats"><div><b>' + String(e.landed).padStart(2, '0') + '</b><span>LANDINGS</span></div><div><b>' + e.score.toLocaleString() + '</b><span>TOTAL SCORE</span></div><div><b>' + e.bestLanding.toLocaleString() + '</b><span>BEST TOUCHDOWN</span></div><div><b>' + (mins + ':' + String(seconds % 60).padStart(2, '0')) + '</b><span>SURVIVAL TIME</span></div><div><b>' + (e.landed ? (e.verticalSum / e.landed).toFixed(1) : '—') + '</b><span>AVG DESCENT M/S</span></div><div><b>' + (e.landed ? Math.round(e.fuelSum / e.landed * 100) + '%' : '—') + '</b><span>AVG FUEL LEFT</span></div></div>';
+        h += '<p class="tip death-tip">' + m.tip + '</p><div class="actions"><button class="btn primary" id="r-retry">Run it back</button><button class="btn ghost" id="r-mode">Change difficulty</button><button class="btn ghost" id="r-levels">Missions</button></div>';
+      } else {
+        h += '<div class="result-head"><p class="eyebrow">Mission ' + lv.id + ' · ' + lv.name + '</p><h2>' + m.title + '</h2></div>';
+        h += '<p class="grade bad">' + m.detail + '</p><div class="tip">' + m.tip + '</div>';
+        h += '<div class="actions"><button class="btn primary" id="r-retry">Try again</button><button class="btn ghost" id="r-levels">Missions</button></div>';
+      }
     }
     card.innerHTML = h;
     var q = function (id) { return document.getElementById(id); };
     if (q('r-next')) q('r-next').addEventListener('click', endless ? nextEndless : nextMission);
-    if (q('r-retry')) q('r-retry').addEventListener('click', function () { Snd.click(); retry(); });
+    if (q('r-retry')) q('r-retry').addEventListener('click', function () { Snd.click(); if (G.endless) startEndless(G.endless.difficulty); else retry(); });
     if (q('r-levels')) q('r-levels').addEventListener('click', function () { Snd.click(); openLevels(); });
+    if (q('r-mode')) q('r-mode').addEventListener('click', function () { Snd.click(); G.endless = null; openEndless(); });
     setScreen('result');
     if (r.ok) countUp(q('r-score'), r.score);
   }
@@ -877,8 +914,8 @@
   function failMsg(r, lv) {
     var dry = r.fuelLeft !== undefined && r.fuelLeft <= 0.001, deg = function (x) { return fmt(Math.abs(x) * 57.296, 0) + '°'; };
     switch (r.reason) {
-      case 'hard': return { title: 'Hard landing', detail: 'You hit the deck at ' + fmt(r.vn, 1) + ' m/s. This mission needs ' + lv.vMax + ' or less.', tip: dry ? 'The tank ran dry before touchdown. Burn in short pulses and save fuel for the last 100 metres.' : 'Light the engine earlier, and keep some thrust on until the legs touch.' };
-      case 'skid': return { title: 'Skidded off', detail: 'You were moving sideways at ' + fmt(Math.abs(r.vt), 1) + ' m/s. The limit is ' + lv.hMax + '.', tip: 'Cancel your sideways drift while you are still high. Tilt against it and burn.' };
+      case 'hard': return { title: 'Hard landing', detail: 'You hit the deck at ' + fmt(r.vn, 1) + ' m/s. This mission needs ' + fmt(lv.vMax, 1) + ' or less.', tip: dry ? 'The tank ran dry before touchdown. Burn in short pulses and save fuel for the last 100 metres.' : 'Light the engine earlier, and keep some thrust on until the legs touch.' };
+      case 'skid': return { title: 'Skidded off', detail: 'You were moving sideways at ' + fmt(Math.abs(r.vt), 1) + ' m/s. The limit is ' + fmt(lv.hMax, 1) + '.', tip: 'Cancel your sideways drift while you are still high. Tilt against it and burn.' };
       case 'tilt': return { title: 'Tipped over', detail: 'The booster was ' + deg(r.rel) + ' off the deck angle. The limit is ' + deg(lv.aMax) + '.', tip: 'Level out before you are low. On a rolling deck, match its tilt.' };
       case 'spin': return { title: 'Spinning', detail: 'The booster was still rotating at touchdown.', tip: 'Stop a spin with a short tap on the opposite tilt button. Keep stability assist on.' };
       case 'edge': return { title: 'Clipped the edge', detail: 'One leg was off the pad.', tip: 'Aim for the glowing ring in the middle. Use the marker above the ship to line up early.' };
@@ -938,6 +975,7 @@
   on('m-levels', openLevels);
   on('m-endless', openEndless);
   on('e-back', openMenu);
+  on('e-skip', launch);
   Array.prototype.forEach.call(document.querySelectorAll('[data-endless]'), function (b) { b.addEventListener('click', function () { Snd.init(); Snd.click(); startEndless(b.getAttribute('data-endless')); }); });
   on('m-settings', function () { openSettings('menu'); });
   on('l-back', openMenu);
@@ -963,6 +1001,10 @@
     var s = G.sim;
     if (G.mode === 'brief') {
       Sim.advanceTime(s, dt);
+    } else if (G.mode === 'transition') {
+      G.transitionTime += dt;
+      $('#e-progress').style.transform = 'scaleX(' + clamp(G.transitionTime / 1.8, 0, 1) + ')';
+      if (G.transitionTime >= 1.8) launch();
     } else if (G.attract) {
       stepSim(dt, function () { return Sim.autopilot(G.sim); });
       emitFx(s, dt);
@@ -970,12 +1012,17 @@
     } else if (G.mode === 'fly' && !G.paused) {
       stepSim(dt, readInput);
       emitFx(s, dt);
+      if (s.status === 'flying') {
+        if (s.y > 3200) showSecret('high', 'YOU FOUND THE TOP OF THE SKY');
+        if (Math.abs(s.th) >= TAU) showSecret('flip', 'ROCKET RODEO! FULL BACKFLIP');
+      }
       if (s.status !== 'flying') { G.mode = 'ended'; G.endTimer = 0; resetInput(); chrome(); }
     } else if (G.mode === 'ended') {
       stepSim(dt, function () { return inp; });
       G.endTimer += dt;
       if (!G.resultShown && G.endTimer > (s.status === 'landed' ? 1.5 : 2.0)) showResult();
     }
+    if (G.secretTime > 0) { G.secretTime = Math.max(0, G.secretTime - dt); if (!G.secretTime) $('#easter-egg').hidden = true; }
     if (!(G.mode === 'fly' && G.paused)) updateParts(dt);
     render(dt);
     if (G.mode === 'fly' || G.mode === 'ended') updateHud(dt);
