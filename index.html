@@ -1006,6 +1006,13 @@
       } catch (e) { ac = null; }
     }
     function setOn(v) { if (ac) out.gain.setTargetAtTime(v ? 0.8 : 0, ac.currentTime, 0.05); }
+    function captureTrack() {
+      if (!ac || !out || !ac.createMediaStreamDestination) return null;
+      try {
+        var dest = ac.createMediaStreamDestination(); out.connect(dest);
+        return { track: dest.stream.getAudioTracks()[0], disconnect: function () { try { out.disconnect(dest); } catch (e) {} dest.stream.getTracks().forEach(function (t) { t.stop(); }); } };
+      } catch (e) { return null; }
+    }
     function loops(thr, speed, rot, active) {
       if (!ac || !L) return;
       var t = ac.currentTime, m = active ? 1 : 0;
@@ -1033,7 +1040,7 @@
       s.connect(f1); f1.connect(f2); f2.connect(g); g.connect(out); s.start(t, Math.random()); s.stop(t + dur + 0.05);
     }
     return {
-      init: init, setOn: setOn, loops: loops,
+      init: init, setOn: setOn, loops: loops, captureTrack: captureTrack,
       click: function () { tone(720, 540, 0.05, 'square', 0.05); },
       clunk: function () { tone(190, 100, 0.14, 'square', 0.12); burst(0.08, 800, 3000, 0.18); },
       thud: function () { tone(110, 38, 0.3, 'sine', 0.7); burst(0.16, 0, 700, 0.45); },
@@ -1061,6 +1068,7 @@
     clouds: [], D: null, hintT: 0, hintGone: false, attractWait: 0, lowBeep: 0, th: THEMES.dusk,
     endless: null, careerRun: null, dailyRun: null, runType: 'mission', runLog: [], recording: false, ghostSim: null, ghostTrace: null,
     lastReplay: null, replayTrack: null, replayOrigin: null, replayTime: 0, replayReturnMenu: false, isReplay: false,
+    clipRecorder: null, clipStream: null, clipAudio: null, clipTimer: 0, clipName: '',
     dailyBoard: null, roundIntroTime: 0, secretTime: 0, secretSeen: {},
     highEgg: false, flipEgg: false
   };
@@ -1698,6 +1706,7 @@
     $('#ghost-label').hidden = !(hud && G.ghostSim);
     $('#controls').hidden = !(G.mode === 'fly' && !G.paused);
     $('#replay-hud').hidden = !replaying;
+    $('#replay-hud').textContent = G.clipRecorder ? 'RECORDING VIDEO · ESC TO FINISH' : 'FLIGHT RECORDER · ESC TO RETURN';
     if (!hud) el['hint'].hidden = true;
   }
   var STAR = '<svg viewBox="0 0 24 24"><polygon class="star{c}" points="12,2 15,9 22,9.5 16.5,14 18.5,21.5 12,17.5 5.5,21.5 7.5,14 2,9.5 9,9"/></svg>';
@@ -1956,7 +1965,7 @@
     G.lastReplay = { version: 1, seed: G.seed, level: cloneJson(G.level), trace: cloneJson(G.runLog), assist: !!G.sim.assist,
       kind: G.runType, date: G.dailyRun ? G.dailyRun.date : null };
   }
-  function startReplay(record, returnMenu) {
+  function startReplay(record, returnMenu, captureClip) {
     if (!record || record.version !== 1 || !record.level || !Array.isArray(record.level.dx) || !Array.isArray(record.trace) || record.trace.length > 50000) return false;
     var level = record.level, required = ['alt', 'vx', 'vy', 'tilt', 'deck', 'swell', 'fuel', 'burn', 'thrust', 'wind', 'gust', 'vMax', 'hMax', 'aMax', 'wMax', 'rcsL', 'rcsR', 'shipV'];
     if (!THEMES[level.sky] || !level.dx.every(Number.isFinite) || level.dx.length !== 2 || level.deck <= 0 || level.alt < 0 || level.fuel < 0 || level.fuel > 1.5) return false;
@@ -1970,6 +1979,7 @@
       if (!Array.isArray(pair) || pair.length !== 2 || !Number.isInteger(pair[0]) || pair[0] < 0 || pair[0] > 7 || !Number.isInteger(pair[1]) || pair[1] < 1 || pair[1] > 65535) return false;
       steps += pair[1]; if (steps > 500000) return false;
     }
+    if (captureClip && !startClipCapture(record)) return false;
     if (G.mode !== 'replay' && !returnMenu) {
       G.replayOrigin = { runType: G.runType, endless: G.endless, careerRun: G.careerRun, dailyRun: G.dailyRun, cur: G.cur, seed: G.seed, level: G.level, mode: G.mode };
     }
@@ -1983,9 +1993,56 @@
   }
   function exportReplay() {
     if (!G.lastReplay) return;
-    var blob = new Blob([JSON.stringify(G.lastReplay)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a');
-    a.href = url; a.download = 'hoverslam-replay-' + (G.lastReplay.date || ('mission-' + G.lastReplay.level.id)) + '.hvr';
+    var blob = new Blob([JSON.stringify(G.lastReplay)], { type: 'application/json' });
+    downloadBlob(blob, 'hoverslam-replay-' + (G.lastReplay.date || ('mission-' + G.lastReplay.level.id)) + '.hvr');
+  }
+  function downloadBlob(blob, name) {
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+  function startClipCapture(record) {
+    if (!canvas.captureStream || !window.MediaRecorder) return false;
+    var stream = null, audio = null, recorder = null;
+    try {
+      stream = canvas.captureStream(30); audio = Snd.captureTrack(); if (audio && audio.track) stream.addTrack(audio.track);
+      var formats = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4'];
+      var mime = formats.find(function (type) { return window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(type); });
+      recorder = mime ? new window.MediaRecorder(stream, { mimeType: mime }) : new window.MediaRecorder(stream);
+      var chunks = [], suffix = record.date || ('mission-' + (record.level.id || 'endless'));
+      G.clipStream = stream; G.clipAudio = audio; G.clipRecorder = recorder;
+      G.clipName = 'hoverslam-clip-' + suffix + (mime && mime.indexOf('mp4') >= 0 ? '.mp4' : '.webm');
+      recorder.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      recorder.onerror = function () { var s = $('#r-clip-status'); if (s) s.textContent = 'Video capture stopped unexpectedly. Export the replay file instead.'; };
+      recorder.onstop = function () {
+        var type = recorder.mimeType || 'video/webm';
+        if (chunks.length) downloadBlob(new Blob(chunks, { type: type }), G.clipName);
+        stream.getTracks().forEach(function (track) { track.stop(); });
+        if (audio) audio.disconnect();
+        G.clipStream = null; G.clipAudio = null; G.clipRecorder = null;
+        var status = $('#r-clip-status'); if (status && chunks.length) status.textContent = 'Video clip downloaded.';
+      };
+      recorder.start(1000);
+      G.clipTimer = setTimeout(function () { stopClipCapture(); }, 90000);
+      return true;
+    } catch (e) {
+      if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch (x) {} }
+      if (stream) stream.getTracks().forEach(function (track) { track.stop(); });
+      if (audio) audio.disconnect();
+      G.clipRecorder = null; G.clipStream = null; G.clipAudio = null; return false;
+    }
+  }
+  function stopClipCapture() {
+    if (G.clipTimer) { clearTimeout(G.clipTimer); G.clipTimer = 0; }
+    var recorder = G.clipRecorder;
+    if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch (e) {} }
+  }
+  function recordReplayClip() {
+    if (!G.lastReplay) return;
+    if (!startReplay(G.lastReplay, false, true)) {
+      var status = $('#r-clip-status'); if (status) status.textContent = 'Video capture is unavailable here; downloading the replay file instead.';
+      exportReplay();
+    }
   }
   function submitDailyScore() {
     var status = $('#r-submit-status'), r = G.sim && G.sim.result;
@@ -2052,7 +2109,7 @@
       else if (daily) h += '<button class="btn primary" id="r-daily-board">Today’s board</button>';
       else if (lv.id < LV.length) h += '<button class="btn primary" id="r-next">Next mission' + (wasNext ? ' · unlocked' : '') + '</button>'; else h += '<button class="btn primary" id="r-levels">All missions</button>';
       h += '<div class="row"><button class="btn" id="r-retry">' + (endless ? 'Restart run' : 'Fly it again') + '</button>' + (lv.id < LV.length && !daily ? '<button class="btn ghost" id="r-levels">Missions</button>' : '') + '</div>';
-      h += '<div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export flight</button></div>';
+      h += '<div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export replay</button></div><button class="btn ghost" id="r-clip">Export video clip</button><p id="r-clip-status" class="daily-status">A replay file can be shared and watched in Hoverslam.</p>';
       if (daily) h += '<button class="btn ghost" id="r-submit">Submit verified score</button><p id="r-submit-status" class="daily-status">' + (dailyBest ? 'Personal best saved on this device.' : 'Personal best: ' + (save.daily.scores[G.dailyRun.date] ? save.daily.scores[G.dailyRun.date].score.toLocaleString() : '—')) + '</p>';
       h += '</div>';
     } else {
@@ -2064,12 +2121,12 @@
         h += '<div class="result-head death-head"><p class="eyebrow">' + e.difficulty + ' run · ' + (newBest ? 'new personal best' : 'best: ' + best.rounds + ' landings') + '</p><h2>Run over</h2></div>';
         h += '<p class="death-cause"><b>' + m.title + '</b><span>' + m.detail + '</span></p>';
         h += '<div class="arcade-stats death-stats"><div><b>' + String(e.landed).padStart(2, '0') + '</b><span>LANDINGS</span></div><div><b>' + e.score.toLocaleString() + '</b><span>TOTAL SCORE</span></div><div><b>' + e.bestLanding.toLocaleString() + '</b><span>BEST TOUCHDOWN</span></div><div><b>' + e.flips + '</b><span>BACKFLIPS</span></div><div><b>' + (mins + ':' + String(seconds % 60).padStart(2, '0')) + '</b><span>SURVIVAL TIME</span></div><div><b>' + (e.landed ? (e.verticalSum / e.landed).toFixed(1) : '—') + '</b><span>AVG DESCENT M/S</span></div><div><b>' + (e.landed ? Math.round(e.fuelSum / e.landed * 100) + '%' : '—') + '</b><span>AVG FUEL LEFT</span></div></div>';
-        h += '<p class="tip death-tip">' + m.tip + '</p><div class="actions"><button class="btn primary" id="r-retry">Run it back</button><button class="btn ghost" id="r-mode">Change difficulty</button><button class="btn ghost" id="r-levels">Missions</button><div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export flight</button></div></div>';
+        h += '<p class="tip death-tip">' + m.tip + '</p><div class="actions"><button class="btn primary" id="r-retry">Run it back</button><button class="btn ghost" id="r-mode">Change difficulty</button><button class="btn ghost" id="r-levels">Missions</button><div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export replay</button></div><button class="btn ghost" id="r-clip">Export video clip</button><p id="r-clip-status" class="daily-status">A replay file can be shared and watched in Hoverslam.</p></div>';
       } else {
         var dailyFail = G.runType === 'daily', careerFail = G.runType === 'career';
         h += '<div class="result-head"><p class="eyebrow">' + (dailyFail ? 'Daily challenge · ' + G.dailyRun.date : careerFail ? 'Career contract ' + lv.id : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + m.title + '</h2></div>';
         h += '<p class="grade bad">' + m.detail + '</p><div class="tip">' + m.tip + '</div>';
-        h += '<div class="actions"><button class="btn primary" id="r-retry">Try again</button>' + (careerFail ? '<button class="btn ghost" id="r-career">Career contracts</button>' : dailyFail ? '<button class="btn ghost" id="r-daily-board">Today’s board</button>' : '<button class="btn ghost" id="r-levels">Missions</button>') + '<div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export flight</button></div>' + (dailyFail ? '<p id="r-submit-status" class="daily-status">A successful landing is required for the daily board.</p>' : '') + '</div>';
+        h += '<div class="actions"><button class="btn primary" id="r-retry">Try again</button>' + (careerFail ? '<button class="btn ghost" id="r-career">Career contracts</button>' : dailyFail ? '<button class="btn ghost" id="r-daily-board">Today’s board</button>' : '<button class="btn ghost" id="r-levels">Missions</button>') + '<div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export replay</button></div><button class="btn ghost" id="r-clip">Export video clip</button><p id="r-clip-status" class="daily-status">A replay file can be shared and watched in Hoverslam.</p>' + (dailyFail ? '<p id="r-submit-status" class="daily-status">A successful landing is required for the daily board.</p>' : '') + '</div>';
       }
     }
     card.innerHTML = h;
@@ -2082,6 +2139,7 @@
     if (q('r-daily-board')) q('r-daily-board').addEventListener('click', openDaily);
     if (q('r-watch')) q('r-watch').addEventListener('click', function () { Snd.click(); if (G.lastReplay) startReplay(G.lastReplay, false); });
     if (q('r-export')) q('r-export').addEventListener('click', exportReplay);
+    if (q('r-clip')) q('r-clip').addEventListener('click', recordReplayClip);
     if (q('r-submit')) q('r-submit').addEventListener('click', submitDailyScore);
     setScreen('result');
     if (r.ok) countUp(q('r-score'), r.score);
@@ -2215,7 +2273,8 @@
       }
       if (s.status !== 'flying') { G.mode = 'ended'; G.endTimer = 0; resetInput(); chrome(); }
     } else if (G.mode === 'replay') {
-      stepSim(dt, function () { return consumeTrace(G.replayTrack); });
+      var replayScale = s.alt !== undefined && s.alt < 160 ? 0.58 : 0.88;
+      stepSim(dt * replayScale, function () { return consumeTrace(G.replayTrack); });
       emitFx(s, dt);
       if (s.status !== 'flying') {
         G.replayTime += dt;
@@ -2235,7 +2294,7 @@
     if (!(G.mode === 'fly' && G.paused)) updateParts(dt);
     render(dt);
     if (G.mode === 'fly' || G.mode === 'ended' || G.mode === 'replay') updateHud(dt);
-    var active = G.mode === 'fly' && !G.paused && s.status === 'flying';
+    var active = (G.mode === 'fly' && !G.paused || G.mode === 'replay') && s.status === 'flying';
     var sp = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
     Snd.loops(s.throttle || 0, sp, s.rot, active || (G.attract && s.status === 'flying' && false));
   }
@@ -2254,6 +2313,7 @@
     handleEvents(s);
   }
   function endReplay() {
+    stopClipCapture();
     if (G.replayReturnMenu) { G.replayReturnMenu = false; openMenu(); return; }
     var origin = G.replayOrigin;
     if (origin) {
