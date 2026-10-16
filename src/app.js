@@ -22,7 +22,10 @@
     day:   { top: '#1d58a4', mid: '#4a92d6', low: '#8cc6ee', hor: '#d6edf8', sea1: '#2f8aa8', sea2: '#0b3250', cloud: '#ffffff', sun: '#fffbe0', sunAlt: 420, stars: 0, clouds: 30 },
     dusk:  { top: '#0d1a38', mid: '#7e4a58', low: '#e0774a', hor: '#ffb961', sea1: '#3c5272', sea2: '#0c1626', cloud: '#ffb08a', sun: '#ffd79a', sunAlt: 40, stars: 0.35, clouds: 26 },
     night: { top: '#030610', mid: '#0a1428', low: '#132642', hor: '#21395a', sea1: '#19324f', sea2: '#050b14', cloud: '#2e4160', sun: '#e8f0ff', sunAlt: 360, stars: 1, clouds: 18 },
-    storm: { top: '#18222c', mid: '#2c3b47', low: '#4c606c', hor: '#7b909a', sea1: '#3c5663', sea2: '#0e1a22', cloud: '#3a4752', sun: '#aab8c0', sunAlt: 0, stars: 0, clouds: 46 }
+    storm: { top: '#18222c', mid: '#2c3b47', low: '#4c606c', hor: '#7b909a', sea1: '#3c5663', sea2: '#0e1a22', cloud: '#3a4752', sun: '#aab8c0', sunAlt: 0, stars: 0, clouds: 46, storm: true },
+    stormNight: { top: '#070c18', mid: '#172633', low: '#334651', hor: '#667680', sea1: '#304858', sea2: '#07121c', cloud: '#202d39', sun: '#c2d5e2', sunAlt: 25, stars: 0.35, clouds: 38, storm: true },
+    moon: { top: '#030610', mid: '#080d18', low: '#111a27', hor: '#202c39', sea1: '#6a6f74', sea2: '#24282d', cloud: '#fff', sun: '#fff2c2', sunAlt: 1100, stars: 1, clouds: 0 },
+    mars: { top: '#311b20', mid: '#8a4031', low: '#d8794d', hor: '#f1ad72', sea1: '#a44f39', sea2: '#382029', cloud: '#f6c4a0', sun: '#ffe1ac', sunAlt: 520, stars: 0.05, clouds: 8 }
   };
   Object.keys(THEMES).forEach(function (k) {
     var t = THEMES[k]; t.id = k;
@@ -32,8 +35,8 @@
 
   // ------------------------------------------------------------------ progress
   var KEY = 'hoverslam.v1';
-  var REV = 2;   // rev 2 replaced missions 10 and up, so progress on those from older saves is dropped
-  var save = { rev: REV, levels: {}, endless: {}, settings: { sound: true, stability: true, guidance: true, haptics: true } };
+  var REV = 3;
+  var save = { rev: REV, levels: {}, endless: {}, ghosts: {}, career: { cash: 850, contracts: {}, upgrades: { engine: 0, tank: 0, steering: 0 } }, daily: { name: 'PILOT', scores: {}, ghosts: {} }, settings: { sound: true, stability: true, guidance: true, haptics: true } };
   try {
     var raw = localStorage.getItem(KEY);
     if (raw) {
@@ -41,7 +44,18 @@
       if (j && typeof j === 'object') {
         if (j.levels && typeof j.levels === 'object') save.levels = j.levels;
         if (j.endless && typeof j.endless === 'object') save.endless = j.endless;
-        if ((j.rev | 0) < REV) for (var lid in save.levels) if (+lid >= 10) delete save.levels[lid];
+        if (j.ghosts && typeof j.ghosts === 'object') save.ghosts = j.ghosts;
+        if (j.career && typeof j.career === 'object') {
+          if (Number.isFinite(j.career.cash)) save.career.cash = Math.max(0, j.career.cash);
+          if (j.career.contracts && typeof j.career.contracts === 'object') save.career.contracts = j.career.contracts;
+          if (j.career.upgrades && typeof j.career.upgrades === 'object') ['engine', 'tank', 'steering'].forEach(function (k) { save.career.upgrades[k] = clamp(j.career.upgrades[k] | 0, 0, 3); });
+        }
+        if (j.daily && typeof j.daily === 'object') {
+          if (typeof j.daily.name === 'string') save.daily.name = j.daily.name.slice(0, 16);
+          if (j.daily.scores && typeof j.daily.scores === 'object') save.daily.scores = j.daily.scores;
+          if (j.daily.ghosts && typeof j.daily.ghosts === 'object') save.daily.ghosts = j.daily.ghosts;
+        }
+        if ((j.rev | 0) < 2) for (var lid in save.levels) if (+lid >= 10) delete save.levels[lid];
         if (j.settings && typeof j.settings === 'object') for (var k in save.settings) if (typeof j.settings[k] === 'boolean') save.settings[k] = j.settings[k];
       }
     }
@@ -145,7 +159,9 @@
     mode: 'boot', level: LV[0], sim: null, seed: 1, cur: 1, attract: true, frozen: false, paused: false, acc: 0,
     camX: 0, camY: 800, lz: Math.log(0.4), camZ: 0.4, shake: 0, flash: 0, endTimer: 0, resultShown: false,
     clouds: [], D: null, hintT: 0, hintGone: false, attractWait: 0, lowBeep: 0, th: THEMES.dusk,
-    endless: null, roundIntroTime: 0, secretTime: 0, secretSeen: {},
+    endless: null, careerRun: null, dailyRun: null, runType: 'mission', runLog: [], recording: false, ghostSim: null, ghostTrace: null,
+    lastReplay: null, replayTrack: null, replayOrigin: null, replayTime: 0, replayReturnMenu: false, isReplay: false,
+    dailyBoard: null, roundIntroTime: 0, secretTime: 0, secretSeen: {},
     highEgg: false, flipEgg: false
   };
   function sx(x) { return W / 2 + (x - G.camX) * G.camZ; }
@@ -160,7 +176,7 @@
   })();
 
   function buildClouds(th) {
-    var arr = [], n = th.clouds, storm = th.id === 'storm';
+    var arr = [], n = th.clouds, storm = !!th.storm;
     for (var i = 0; i < n; i++) {
       var w = 90 + Math.random() * 230, blobs = [];
       for (var b = 0; b < 7; b++) blobs.push({ dx: (Math.random() - 0.5) * w, dy: Math.random() * w * 0.16, r: w * (0.14 + Math.random() * 0.16) });
@@ -386,7 +402,7 @@
   }
   function drawStars(th, t) {
     var a = th.stars;
-    if (th.id !== 'night' && th.id !== 'storm') a = Math.max(a, clamp((G.camY - 350) / 700, 0, 0.85));
+    if (th.id !== 'night' && th.id !== 'storm' && th.id !== 'stormNight' && th.id !== 'moon') a = Math.max(a, clamp((G.camY - 350) / 700, 0, 0.85));
     if (a < 0.03) return;
     ctx.fillStyle = '#fff';
     for (var i = 0; i < stars.length; i++) {
@@ -397,17 +413,17 @@
     ctx.globalAlpha = 1;
   }
   function drawSun(th) {
-    if (th.id === 'storm') return;
-    var x = W * 0.74, y = sy(th.sunAlt), r = th.id === 'night' ? 24 : 42;
+    if (th.storm) return;
+    var x = W * 0.74, y = sy(th.sunAlt), r = th.id === 'night' || th.id === 'moon' ? 24 : 42;
     if (y > H + 260) return;
     var g = ctx.createRadialGradient(x, y, 0, x, y, r * 5);
-    g.addColorStop(0, rgba(th.c.sun, th.id === 'night' ? 0.28 : 0.6)); g.addColorStop(0.3, rgba(th.c.sun, 0.16)); g.addColorStop(1, rgba(th.c.sun, 0));
+    g.addColorStop(0, rgba(th.c.sun, th.id === 'night' || th.id === 'moon' ? 0.28 : 0.6)); g.addColorStop(0.3, rgba(th.c.sun, 0.16)); g.addColorStop(1, rgba(th.c.sun, 0));
     ctx.fillStyle = g; ctx.fillRect(x - r * 5, y - r * 5, r * 10, r * 10);
     ctx.fillStyle = th.sun; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
   }
   function wrap(v, m) { return ((v % m) + m) % m; }
   function drawClouds(th, t) {
-    var cl = G.clouds, z = G.camZ, base = th.c.cloud, storm = th.id === 'storm';
+    var cl = G.clouds, z = G.camZ, base = th.c.cloud, storm = !!th.storm;
     for (var i = 0; i < cl.length; i++) {
       var c = cl[i], par = 0.5 + 0.5 * c.d, zl = z * par;
       var wx = wrap(c.x + t * c.v - G.camX * par, 3000) - 1500;
@@ -423,7 +439,7 @@
     }
   }
   function drawRain(th, dt, s) {
-    if (th.id !== 'storm') return;
+    if (!th.storm) return;
     var slant = clamp(-(s.wind0 || 0) * 40, -90, 90) + (s.wind0 > 0 ? 30 : -30);
     ctx.strokeStyle = 'rgba(205,225,238,0.28)'; ctx.lineWidth = 1; ctx.beginPath();
     for (var i = 0; i < rain.length; i++) {
@@ -488,16 +504,63 @@
     }
   }
 
+  function drawPlanetSurface(th, s, layer) {
+    var mars = s.level.terrain === 'mars', base = sy(0), z = G.camZ;
+    var near = mars ? '#a34d38' : '#73787a', far = mars ? '#63352f' : '#555b61';
+    if (layer === 0) {
+      var grad = ctx.createLinearGradient(0, base, 0, H);
+      grad.addColorStop(0, far); grad.addColorStop(1, mars ? '#34232a' : '#22272d');
+      ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(0, base);
+      for (var x = 0; x <= W; x += 24) ctx.lineTo(x, base - (3 + 7 * Math.sin(x * 0.007 + (mars ? 1.5 : 0.3))) * Math.min(z, 1.3));
+      ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+      // distant ridges give each airless/planetary horizon a scale of its own
+      ctx.fillStyle = mars ? 'rgba(48,24,27,.45)' : 'rgba(20,25,31,.58)'; ctx.beginPath(); ctx.moveTo(0, base);
+      for (var rx = 0; rx <= W; rx += 48) ctx.lineTo(rx, base - (12 + 20 * Math.abs(Math.sin(rx * 0.004 + 2))) * Math.min(z, 1));
+      ctx.lineTo(W, base); ctx.closePath(); ctx.fill();
+    } else {
+      var g = ctx.createLinearGradient(0, base, 0, H); g.addColorStop(0, near); g.addColorStop(1, mars ? '#4b2b2b' : '#34383d');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(0, base);
+      for (var px = 0; px <= W; px += 12) ctx.lineTo(px, base + Math.sin(px * 0.017 + 0.8) * Math.min(z, 2) * (mars ? 3 : 2));
+      ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = mars ? 'rgba(246,173,118,.42)' : 'rgba(230,231,220,.32)'; ctx.lineWidth = Math.max(1, z * 0.32); ctx.beginPath(); ctx.moveTo(0, base);
+      for (var sx0 = 0; sx0 <= W; sx0 += 12) ctx.lineTo(sx0, base + Math.sin(sx0 * 0.017 + 0.8) * Math.min(z, 2) * (mars ? 3 : 2)); ctx.stroke();
+      // low, broad craters (world anchored so they drift naturally with the camera)
+      for (var i = -2; i < 8; i++) {
+        var wx = i * 310 + (mars ? 115 : 30), cx = sx(wx), rad = (mars ? 29 : 42) * z;
+        if (cx < -rad * 2 || cx > W + rad * 2) continue;
+        ctx.strokeStyle = mars ? 'rgba(57,30,27,.34)' : 'rgba(25,29,34,.46)'; ctx.lineWidth = Math.max(1, z * 1.2);
+        ctx.beginPath(); ctx.ellipse(cx, base + 3 * z, rad, rad * 0.2, 0, Math.PI, TAU); ctx.stroke();
+      }
+    }
+  }
+
   function drawShip(D, lv, t) {
     var W2 = lv.deck / 2, HL = W2 + 14, z = G.camZ, px = sx(D.x), py = sy(D.y);
     if (px + HL * z < -40 || px - HL * z > W + 40 || py < -300 || py - 16 * z > H) return;
     ctx.save(); ctx.translate(px, py); ctx.rotate(-D.phi); ctx.scale(z, -z);
+    if (lv.terrain) {
+      var mars = lv.terrain === 'mars', steel = mars ? '#51413d' : '#424b53', deckFill = mars ? '#b96643' : '#aeb5b7';
+      // A fixed surface platform with legs anchored into the regolith, rather than an ocean ship.
+      [-W2 + 7, W2 - 7].forEach(function (x) {
+        ctx.strokeStyle = steel; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, -0.8); ctx.lineTo(x * 0.78, -5.3); ctx.stroke();
+        ctx.fillStyle = mars ? '#e29463' : '#d2d5d2'; ctx.fillRect(x * 0.78 - 2.4, -5.6, 4.8, 0.6);
+      });
+      ctx.fillStyle = mars ? '#352b2a' : '#30373b'; ctx.fillRect(-W2 - 1, -1.7, W2 * 2 + 2, 1.3);
+      ctx.fillStyle = deckFill; ctx.fillRect(-W2, -0.5, W2 * 2, 0.5);
+      ctx.fillStyle = '#f4b852'; ctx.fillRect(-lv.ring, -0.52, lv.ring * 2, 0.52);
+      ctx.fillStyle = '#f5f2df'; ctx.fillRect(-W2, -0.2, W2 * 2, 0.2);
+      ctx.fillStyle = mars ? '#50312c' : '#52585a'; ctx.fillRect(-W2 * 0.44, 0.2, W2 * 0.88, 2.8);
+      ctx.fillStyle = mars ? '#e18254' : '#d8d9d5'; ctx.fillRect(-W2 * 0.44, 2.35, W2 * 0.88, 0.45);
+      ctx.save(); ctx.translate(0, 0.8); ctx.scale(1, -1); ctx.font = '800 2.8px "Big Shoulders Display", Impact, sans-serif'; ctx.fillStyle = 'rgba(245,241,226,.95)'; ctx.textAlign = 'center'; ctx.fillText(lv.padName || 'PAD', 0, 0); ctx.restore();
+      [-W2 + 3, W2 - 3].forEach(function (x, i) { ctx.fillStyle = i ? '#ffb25e' : '#7ff4d2'; ctx.fillRect(x - 0.35, 0, 0.7, 0.6); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = i ? 'rgba(255,155,65,.45)' : 'rgba(88,224,162,.4)'; ctx.beginPath(); ctx.arc(x, 0.4, 2.2, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; });
+      ctx.restore(); return;
+    }
     var hg = ctx.createLinearGradient(0, -1.6, 0, -11); hg.addColorStop(0, '#3d4857'); hg.addColorStop(1, '#161c26');
     ctx.beginPath(); ctx.moveTo(-HL, -1.6); ctx.lineTo(-HL + 1.2, -8.6); ctx.lineTo(-HL + 9, -11); ctx.lineTo(HL - 9, -11); ctx.lineTo(HL - 1.2, -8.6); ctx.lineTo(HL, -1.6); ctx.closePath();
     ctx.fillStyle = hg; ctx.fill();
     ctx.save(); ctx.clip(); ctx.fillStyle = '#7b3a2f'; ctx.fillRect(-HL, -12, HL * 2, 6.8); ctx.restore();
     ctx.save(); ctx.translate(-W2 * 0.45, -5.3); ctx.scale(1, -1);
-    ctx.font = '800 2.8px "Big Shoulders Display", Impact, sans-serif'; ctx.fillStyle = 'rgba(236,241,246,0.9)'; ctx.textAlign = 'center'; ctx.fillText('TIDEWAKE', 0, 0); ctx.restore();
+    ctx.font = '800 2.8px "Big Shoulders Display", Impact, sans-serif'; ctx.fillStyle = 'rgba(236,241,246,0.9)'; ctx.textAlign = 'center'; ctx.fillText(lv.padName || 'TIDEWAKE', 0, 0); ctx.restore();
     ctx.fillStyle = '#69737f'; ctx.fillRect(-HL, -2.2, HL * 2, 2.2);
     ctx.fillStyle = '#c9d2da'; ctx.fillRect(-HL, -0.3, HL * 2, 0.3);
     ctx.fillStyle = '#262d37'; ctx.fillRect(-W2, -0.5, W2 * 2, 0.5);
@@ -635,15 +698,19 @@
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     drawSky(th); drawStars(th, s.t); drawSun(th); drawClouds(th, s.t);
     drawStreaks(s, dt); drawRain(th, dt, s);
-    drawSea(th, s, 0); drawShip(D, s.level, s.t);
+    if (s.level.terrain) drawPlanetSurface(th, s, 0); else drawSea(th, s, 0);
+    drawShip(D, s.level, s.t);
     // engine light on the deck
     if (s.status === 'flying' && s.throttle > 0.1 && s.alt < 70) {
       var gx = sx(Sim.toWorld(s, 0, -18).x), gy = sy(D.y), rr = (30 + 40 * s.throttle) * Math.max(G.camZ, 0.8), ga = s.throttle * 0.55 * (1 - s.alt / 70);
       var lg = ctx.createRadialGradient(gx, gy, 0, gx, gy, rr); lg.addColorStop(0, 'rgba(255,170,90,' + ga + ')'); lg.addColorStop(1, 'rgba(255,140,60,0)');
       ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = lg; ctx.fillRect(gx - rr, gy - rr, rr * 2, rr * 2); ctx.globalCompositeOperation = 'source-over';
     }
-    drawSea(th, s, 1);
+    if (s.level.terrain) drawPlanetSurface(th, s, 1); else drawSea(th, s, 1);
     if (G.highEgg && s.status === 'flying' && s.y > 2800) drawHighEgg(s);
+    if (G.ghostSim && (G.ghostSim.status === 'flying' || G.ghostSim.status === 'landed')) {
+      ctx.save(); ctx.globalAlpha = 0.32; ctx.globalCompositeOperation = 'screen'; drawRocket(G.ghostSim); ctx.restore();
+    }
     if (s.status === 'flying' || s.status === 'landed') drawRocket(s);
     drawParts();
     drawGuidance(s);
@@ -718,16 +785,19 @@
 
   // ------------------------------------------------------------------ screens
   var screens = {};
-  ['menu', 'levels', 'brief', 'result', 'pause', 'settings', 'endless'].forEach(function (n) { screens[n] = document.getElementById('s-' + n); });
+  ['menu', 'levels', 'brief', 'result', 'pause', 'settings', 'endless', 'career', 'daily'].forEach(function (n) { screens[n] = document.getElementById('s-' + n); });
   function setScreen(name) {
     Object.keys(screens).forEach(function (k) { screens[k].hidden = k !== name; });
     chrome();
   }
   function chrome() {
-    var hud = (G.mode === 'fly' || G.mode === 'ended') && !G.resultShown;
+    var replaying = G.mode === 'replay';
+    var hud = (G.mode === 'fly' || G.mode === 'ended' || replaying) && !G.resultShown;
     $('#hud').hidden = !hud;
     $('#arcade-hud').hidden = !(hud && G.endless);
+    $('#ghost-label').hidden = !(hud && G.ghostSim);
     $('#controls').hidden = !(G.mode === 'fly' && !G.paused);
+    $('#replay-hud').hidden = !replaying;
     if (!hud) el['hint'].hidden = true;
   }
   var STAR = '<svg viewBox="0 0 24 24"><polygon class="star{c}" points="12,2 15,9 22,9.5 16.5,14 18.5,21.5 12,17.5 5.5,21.5 7.5,14 2,9.5 9,9"/></svg>';
@@ -780,17 +850,92 @@
   }
 
   function fmt(n, d) { return n.toFixed(d === undefined ? 0 : d); }
-  function openBrief(id) {
+  var UPGRADE_INFO = {
+    engine: { title: 'Engine tune', detail: 'More thrust, slightly higher fuel burn.', cost: [430, 700, 1050] },
+    tank: { title: 'Fuel reserve', detail: 'Start each contract with more propellant.', cost: [300, 510, 820] },
+    steering: { title: 'RCS valves', detail: 'Faster attitude control in both directions.', cost: [350, 590, 900] }
+  };
+  function careerLevel(base) {
+    var lv = {}, u = save.career.upgrades;
+    Object.keys(base).forEach(function (k) { lv[k] = base[k]; });
+    lv.thrust *= 1 + 0.08 * u.engine; lv.burn *= 1 + 0.025 * u.engine;
+    lv.fuel = Math.min(0.98, lv.fuel + 0.075 * u.tank);
+    lv.rcsL = Math.min(1.5, lv.rcsL * (1 + 0.13 * u.steering)); lv.rcsR = Math.min(1.5, lv.rcsR * (1 + 0.13 * u.steering));
+    return lv;
+  }
+  function careerUnlocked(id) { return id === 1 || !!(save.career.contracts[id - 1] && save.career.contracts[id - 1].done); }
+  function buildCareer() {
+    var card = $('#career-card'), contracts = '', upgrades = '', counts = 0;
+    LV.forEach(function (lv) {
+      var rec = save.career.contracts[lv.id], open = careerUnlocked(lv.id), done = !!(rec && rec.done);
+      if (done) counts++;
+      contracts += '<button class="contract" data-contract="' + lv.id + '"' + (open ? '' : ' disabled') + '><span class="contract-no">' + String(lv.id).padStart(2, '0') + '</span><span class="contract-copy"><b>' + lv.name + '</b><small>' + (done ? 'Best ' + (rec.best || 0).toLocaleString() + ' · fly again for reduced pay' : 'Reward on successful landing') + '</small></span><span class="contract-state">' + (done ? 'CLEARED' : open ? 'OPEN' : 'LOCKED') + '</span></button>';
+    });
+    ['engine', 'tank', 'steering'].forEach(function (key) {
+      var info = UPGRADE_INFO[key], level = save.career.upgrades[key], maxed = level >= 3, price = maxed ? 0 : info.cost[level];
+      upgrades += '<button class="upgrade" data-upgrade="' + key + '"' + (maxed || save.career.cash < price ? ' disabled' : '') + '><span class="contract-copy"><b>' + info.title + ' · ' + level + '/3</b><small>' + info.detail + '</small></span><span class="contract-state">' + (maxed ? 'MAX' : '$' + price) + '</span></button>';
+    });
+    card.innerHTML = '<div class="bar"><h2>Career contracts</h2><div class="career-cash">$' + save.career.cash.toLocaleString() + '<small>AVAILABLE FUNDS</small></div></div>' +
+      '<p>Take recovery contracts, earn more for clean landings, and tune the booster between flights. Cleared contracts stay open, with a smaller repeat fee.</p>' +
+      '<div class="career-layout"><div class="career-list"><h3>Contracts · ' + counts + ' / ' + LV.length + ' cleared</h3>' + contracts + '</div><div class="upgrade-list"><h3>Booster upgrades</h3>' + upgrades + '<p class="daily-status">Engine trades a little efficiency for thrust. Fuel and steering upgrades carry into every contract.</p></div></div>' +
+      '<button class="btn ghost" id="career-back">Back to hangar</button>';
+    Array.prototype.forEach.call(card.querySelectorAll('[data-contract]'), function (b) { b.addEventListener('click', function () { Snd.click(); openBrief(+b.dataset.contract, 'career'); }); });
+    Array.prototype.forEach.call(card.querySelectorAll('[data-upgrade]'), function (b) { b.addEventListener('click', function () {
+      var key = b.dataset.upgrade, level = save.career.upgrades[key], price = UPGRADE_INFO[key].cost[level];
+      if (level >= 3 || save.career.cash < price) return;
+      save.career.cash -= price; save.career.upgrades[key]++; persist(); Snd.chime(); buildCareer();
+    }); });
+    $('#career-back').addEventListener('click', openMenu);
+  }
+  function openCareer() { G.endless = null; G.careerRun = null; G.dailyRun = null; G.mode = 'career'; startAttract(); buildCareer(); setScreen('career'); }
+  function startDaily() {
+    var d = Sim.dailyChallenge(new Date().toISOString().slice(0, 10));
+    G.runType = 'daily'; G.dailyRun = { date: d.date, seed: d.seed }; G.careerRun = null; G.endless = null;
+    G.seed = d.seed; G.cur = d.level.id; newRound(d.level, d.seed, true); beginFlight('daily');
+  }
+  function renderDailyBoard(rows, local) {
+    var box = $('#daily-board-wrap'); if (!box) return;
+    box.innerHTML = '';
+    var table = document.createElement('table'); table.className = 'daily-board';
+    (rows || []).slice(0, 8).forEach(function (row, i) {
+      var tr = document.createElement('tr'), place = document.createElement('td'), name = document.createElement('td'), score = document.createElement('td');
+      place.textContent = String(i + 1).padStart(2, '0'); name.textContent = row.name || 'PILOT'; score.textContent = Number(row.score || 0).toLocaleString();
+      tr.appendChild(place); tr.appendChild(name); tr.appendChild(score); table.appendChild(tr);
+    });
+    if (!rows || !rows.length) { var empty = document.createElement('p'); empty.className = 'daily-status'; empty.textContent = local ? 'No score saved on this device yet.' : 'No submitted flights yet today. Set the first mark.'; box.appendChild(empty); }
+    else box.appendChild(table);
+    $('#daily-board-status').textContent = local ? 'LOCAL BOARD · this device only' : 'LIVE BOARD · verified flight records';
+  }
+  function loadDailyBoard(date) {
+    var localRow = save.daily.scores[date], localRows = localRow ? [localRow] : [];
+    renderDailyBoard(localRows, true);
+    if (typeof fetch !== 'function') return;
+    fetch('/api/daily?date=' + encodeURIComponent(date)).then(function (r) { if (!r.ok) throw new Error('offline'); return r.json(); }).then(function (data) {
+      if ($('#daily-board-wrap') && G.dailyRun === null && $('#daily-card').dataset.date === date) renderDailyBoard(data.entries || [], false);
+    }).catch(function () {});
+  }
+  function openDaily() {
+    G.endless = null; G.careerRun = null; G.dailyRun = null; G.mode = 'daily'; startAttract();
+    var challenge = Sim.dailyChallenge(new Date().toISOString().slice(0, 10)), th = THEMES[challenge.level.sky];
+    var card = $('#daily-card'); card.dataset.date = challenge.date;
+    card.innerHTML = '<p class="eyebrow">One flight · same seed for every pilot</p><h2>Daily challenge</h2><p>' + challenge.level.name + ' · ' + challenge.level.blurb + '</p><div class="daily-meta"><span>' + challenge.date + ' UTC</span><span>' + challenge.level.alt + ' m start</span><span>' + fmt(challenge.level.gravity || Sim.G, 2) + ' m/s² gravity</span></div><h3>Today’s board</h3><div id="daily-board-status" class="daily-status"></div><div id="daily-board-wrap"></div><label class="daily-name">Callsign <input id="daily-name" maxlength="16" value="' + save.daily.name.replace(/[&<>"']/g, '') + '" autocomplete="nickname"></label><div class="actions"><button class="btn primary" id="daily-start">Fly today’s seed</button><button class="btn ghost" id="daily-back">Back</button></div>';
+    $('#daily-name').addEventListener('change', function () { save.daily.name = this.value.replace(/[^A-Za-z0-9 _-]/g, '').trim().slice(0, 16) || 'PILOT'; this.value = save.daily.name; persist(); });
+    $('#daily-start').addEventListener('click', function () { Snd.click(); startDaily(); });
+    $('#daily-back').addEventListener('click', openMenu);
+    loadDailyBoard(challenge.date); setScreen('daily');
+  }
+  function openBrief(id, type) {
     G.endless = null;
-    var lv = LV[id - 1], sv = lvSave(id);
+    G.dailyRun = null; G.runType = type || 'mission'; G.careerRun = type === 'career' ? { id: id } : null;
+    var lv = type === 'career' ? careerLevel(LV[id - 1]) : LV[id - 1], sv = lvSave(id);
     G.cur = id; G.seed = (Math.random() * 1e9) | 0;
     newRound(lv, G.seed, false);
     G.attract = false; G.frozen = true; G.mode = 'brief'; G.paused = false; G.resultShown = false;
-    $('#b-eye').textContent = 'Mission ' + id + ' of ' + LV.length;
+    $('#b-eye').textContent = type === 'career' ? 'Career contract · payment on touchdown' : 'Mission ' + id + ' of ' + LV.length;
     $('#b-name').textContent = lv.name;
     $('#b-blurb').textContent = lv.blurb;
     var windTx = lv.wind || lv.gust ? Math.round(lv.wind * 10) + (lv.gust ? '–' + Math.round((lv.wind + lv.gust) * 10) : '') + ' kt' : 'Calm';
-    var rows = [['Deck', fmt(lv.deck) + ' m'], ['Swell', fmt(lv.swell, 1) + ' m'], ['Wind', windTx], ['Ship', lv.zig ? 'Weaving' : lv.away ? 'Fleeing' : lv.shipV ? fmt(lv.shipV * 1.94) + ' kt' : 'Holding'], ['Fuel', fmt(lv.fuel * 100) + '%' + (lv.leak ? ' leaking' : '')], [lv.thrust < 1 ? 'Engine' : 'Start', lv.thrust < 1 ? fmt(lv.thrust * 100) + '%' : fmt(lv.alt) + ' m']];
+    var rows = [['Deck', fmt(lv.deck) + ' m'], ['Gravity', fmt(lv.gravity || Sim.G, 2) + ' m/s²'], ['Swell', fmt(lv.swell, 1) + ' m'], ['Wind', windTx], ['Ship', lv.zig ? 'Weaving' : lv.away ? 'Fleeing' : lv.shipV ? fmt(lv.shipV * 1.94) + ' kt' : 'Holding'], ['Fuel', fmt(lv.fuel * 100) + '%' + (lv.leak ? ' leaking' : '')], [lv.thrust < 1 ? 'Engine' : 'Start', lv.thrust < 1 ? fmt(lv.thrust * 100) + '%' : fmt(lv.alt) + ' m']];
     $('#b-specs').innerHTML = rows.map(function (r) { return '<div><dt>' + r[0] + '</dt><dd>' + r[1] + '</dd></div>'; }).join('');
     var goals = [[true, 'Land on the ship', 'Down at ' + lv.vMax + ' m/s or less'], [sv.ring, 'Touch down inside the ring', '±' + fmt(lv.ring) + ' m'], [sv.fuel, 'Land with fuel to spare', fmt(lv.fuelGoal * 100) + '% left']];
     $('#b-goals').innerHTML = goals.map(function (g, i) { return '<li' + (i === 0 ? (sv.done ? ' class="ok"' : '') : (g[0] ? ' class="ok"' : '')) + '>' + (i === 0 ? (sv.done ? CHECK : STAR.replace('{c}', '')) : g[0] ? CHECK : STAR.replace('{c}', '')) + '<span>' + g[1] + '</span><em>' + g[2] + '</em></li>'; }).join('');
@@ -803,9 +948,10 @@
     }
     if (lv.hazard) how = '<div class="tip"><b>Hazard.</b> ' + lv.hazard + '</div>' + how;
     $('#b-how').innerHTML = how; $('#b-how').hidden = !how;
+    $('#b-go').textContent = type === 'career' ? 'Accept contract' : 'Launch';
     setScreen('brief');
   }
-  function openLevels() { G.endless = null; G.mode = 'levels'; startAttract(); buildLevels(); setScreen('levels'); }
+  function openLevels() { G.endless = null; G.careerRun = null; G.dailyRun = null; G.mode = 'levels'; startAttract(); buildLevels(); setScreen('levels'); }
   function openEndless() { G.mode = 'endless'; startAttract(); G.endless = null; setScreen('endless'); }
   function endlessRound() {
     var e = G.endless, round = e.round, difficulty = e.difficulty;
@@ -832,25 +978,25 @@
     if (round > 1) { roundCallout.classList.remove('pop'); void roundCallout.offsetWidth; roundCallout.classList.add('pop'); }
     $('#round-callout-n').textContent = String(round).padStart(2, '0');
     $('#round-callout-name').textContent = base.name;
-    resetInput(); Snd.init(); setScreen(null);
+    beginFlight('endless');
   }
   function startEndless(difficulty) {
     G.endless = { difficulty: difficulty, round: 1, landed: 0, score: 0, bestLanding: 0, verticalSum: 0, fuelSum: 0, flips: 0, startedAt: performance.now() };
     G.highEgg = false; G.flipEgg = false; endlessRound(false);
   }
   function nextEndless() { Snd.click(); G.endless.round++; endlessRound(); }
-  function openMenu() { G.endless = null; G.mode = 'menu'; startAttract(); buildMenu(); setScreen('menu'); }
+  function openMenu() { G.endless = null; G.careerRun = null; G.dailyRun = null; G.runType = 'mission'; G.mode = 'menu'; startAttract(); buildMenu(); setScreen('menu'); }
   function openSettings(from) {
     G.settingsFrom = from; buildToggles($('#s-toggles')); $('#s-reset').textContent = 'Reset progress'; $('#s-reset')._arm = false; setScreen('settings');
   }
 
   function launch() {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    newRound(G.endless ? G.endless.current : LV[G.cur - 1], G.seed, true);
-    G.attract = false; G.frozen = false; G.paused = false; G.resultShown = false; G.mode = 'fly'; G.endTimer = 0;
-    resetInput(); Snd.init(); setScreen(null);
+    var lv = G.endless ? G.endless.current : G.runType === 'career' ? careerLevel(LV[G.cur - 1]) : LV[G.cur - 1];
+    newRound(lv, G.seed, save.settings.stability);
+    beginFlight(G.runType);
   }
-  function retry() { launch(); }
+  function retry() { if (G.runType === 'daily') startDaily(); else launch(); }
   function nextMission() { if (G.cur < LV.length) { Snd.click(); openBrief(G.cur + 1); } else openLevels(); }
   function pause(v) {
     if (G.mode !== 'fly') return;
@@ -860,7 +1006,8 @@
 
   function newRound(lv, seed, assist) {
     G.level = lv; G.th = THEMES[lv.sky]; G.clouds = buildClouds(G.th);
-    G.sim = Sim.createSim(lv, seed, { assist: save.settings.stability });
+    G.sim = Sim.createSim(lv, seed, { assist: assist === undefined ? save.settings.stability : assist });
+    G.runLog = []; G.recording = false; G.ghostSim = null; G.ghostTrack = null;
     var lm = function (id, v) { var n = document.getElementById(id); if (n) n.textContent = v; };
     var fg = document.getElementById('fuel-goal'); if (fg) fg.style.left = (lv.fuelGoal * 100).toFixed(1) + '%';
     lm('lim-vs', '\u2264' + fmt(lv.vMax, 1)); lm('lim-hs', '\u2264' + fmt(lv.hMax, 1)); lm('lim-tilt', '\u2264' + Math.round(lv.aMax * 57.296) + '\u00B0');
@@ -868,11 +1015,86 @@
     parts.length = 0; G.acc = 0; G.shake = 0; G.flash = 0; G.D = Sim.deckPose(G.sim);
     updateCamera(0, true);
   }
+  function cloneJson(v) { return JSON.parse(JSON.stringify(v)); }
+  function bestGhost() {
+    if (G.runType === 'daily' && G.dailyRun) return save.daily.ghosts[G.dailyRun.date];
+    if (G.runType === 'mission') return save.ghosts[G.cur];
+    return null;
+  }
+  function beginFlight(type) {
+    if (type) G.runType = type;
+    G.isReplay = false;
+    G.attract = false; G.frozen = false; G.paused = false; G.resultShown = false; G.mode = 'fly'; G.endTimer = 0;
+    G.runLog = []; G.recording = true; G.lastReplay = null;
+    var ghost = bestGhost();
+    if (ghost && ghost.trace) {
+      G.ghostSim = Sim.createSim(ghost.level || G.level, ghost.seed, { assist: ghost.assist !== false });
+      G.ghostTrack = { trace: ghost.trace, index: 0, remaining: 0 };
+    }
+    resetInput(); Snd.init(); setScreen(null); chrome();
+  }
   function startAttract() {
     if (G.attract && G.sim && G.sim.status === 'flying') return;
     var ids = [4, 1, 8, 2], lv = LV[ids[(Math.random() * ids.length) | 0] - 1];
     G.level = lv; newRound(lv, (Math.random() * 1e9) | 0, true);
     G.sim.assist = true; G.attract = true; G.frozen = false; G.attractWait = 0;
+  }
+
+  function appendTrace(control) {
+    var mask = (control.left ? 1 : 0) | (control.right ? 2 : 0) | (control.thrust > 0 ? 4 : 0), last = G.runLog[G.runLog.length - 1];
+    if (last && last[0] === mask && last[1] < 65535) last[1]++; else G.runLog.push([mask, 1]);
+  }
+  function consumeTrace(track) {
+    if (!track || !track.trace || track.index >= track.trace.length) return { left: false, right: false, thrust: 0 };
+    if (track.remaining <= 0) track.remaining = track.trace[track.index][1];
+    var mask = track.trace[track.index][0];
+    if (--track.remaining <= 0) track.index++;
+    return { left: !!(mask & 1), right: !!(mask & 2), thrust: mask & 4 ? 1 : 0 };
+  }
+  function saveReplayRecord() {
+    if (!G.runLog.length) return;
+    G.lastReplay = { version: 1, seed: G.seed, level: cloneJson(G.level), trace: cloneJson(G.runLog), assist: !!G.sim.assist,
+      kind: G.runType, date: G.dailyRun ? G.dailyRun.date : null };
+  }
+  function startReplay(record, returnMenu) {
+    if (!record || record.version !== 1 || !record.level || !Array.isArray(record.level.dx) || !Array.isArray(record.trace) || record.trace.length > 50000) return false;
+    var level = record.level, required = ['alt', 'vx', 'vy', 'tilt', 'deck', 'swell', 'fuel', 'burn', 'thrust', 'wind', 'gust', 'vMax', 'hMax', 'aMax', 'wMax', 'rcsL', 'rcsR', 'shipV'];
+    if (!THEMES[level.sky] || !level.dx.every(Number.isFinite) || level.dx.length !== 2 || level.deck <= 0 || level.alt < 0 || level.fuel < 0 || level.fuel > 1.5) return false;
+    for (var f = 0; f < required.length; f++) if (!Number.isFinite(level[required[f]]) || Math.abs(level[required[f]]) > 5000) return false;
+    if (level.gravity !== undefined && (!Number.isFinite(level.gravity) || level.gravity < 0.5 || level.gravity > 20)) return false;
+    if (level.fault && (!Number.isFinite(level.fault.hi) || !Number.isFinite(level.fault.lo) || !Number.isFinite(level.fault.d0) || !Number.isFinite(level.fault.d1))) return false;
+    if (level.blackout && (!Array.isArray(level.blackout) || level.blackout.length !== 2 || !level.blackout.every(Number.isFinite))) return false;
+    var steps = 0;
+    for (var i = 0; i < record.trace.length; i++) {
+      var pair = record.trace[i];
+      if (!Array.isArray(pair) || pair.length !== 2 || !Number.isInteger(pair[0]) || pair[0] < 0 || pair[0] > 7 || !Number.isInteger(pair[1]) || pair[1] < 1 || pair[1] > 65535) return false;
+      steps += pair[1]; if (steps > 500000) return false;
+    }
+    if (G.mode !== 'replay' && !returnMenu) {
+      G.replayOrigin = { runType: G.runType, endless: G.endless, careerRun: G.careerRun, dailyRun: G.dailyRun, cur: G.cur, seed: G.seed, level: G.level, mode: G.mode };
+    }
+    G.replayReturnMenu = !!returnMenu; G.replayTime = 0; G.isReplay = true; G.lastReplay = record;
+    G.runType = 'replay'; G.endless = null; G.careerRun = null; G.dailyRun = null;
+    G.seed = record.seed >>> 0; G.cur = record.level.id || 0;
+    newRound(record.level, G.seed, record.assist !== false);
+    G.recording = false; G.isReplay = true; G.replayTrack = { trace: record.trace, index: 0, remaining: 0 };
+    G.mode = 'replay'; G.resultShown = false; G.attract = false; G.acc = 0; resetInput(); setScreen(null); chrome();
+    return true;
+  }
+  function exportReplay() {
+    if (!G.lastReplay) return;
+    var blob = new Blob([JSON.stringify(G.lastReplay)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = 'hoverslam-replay-' + (G.lastReplay.date || ('mission-' + G.lastReplay.level.id)) + '.hvr';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+  function submitDailyScore() {
+    var status = $('#r-submit-status'), r = G.sim && G.sim.result;
+    if (!status || !G.dailyRun || !r || !r.ok || !G.lastReplay) { if (status) status.textContent = 'Land successfully to submit a score.'; return; }
+    status.textContent = 'Checking flight with the daily board…';
+    fetch('/api/daily', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: G.dailyRun.date, name: save.daily.name, seed: G.dailyRun.seed, trace: G.lastReplay.trace }) })
+      .then(function (res) { return res.json().then(function (body) { if (!res.ok) throw new Error(body.error || 'Submission failed'); return body; }); })
+      .then(function () { status.textContent = 'Score verified and added to today’s board.'; })
+      .catch(function (e) { status.textContent = e && e.message && e.message !== 'Failed to fetch' ? e.message : 'Daily server unavailable. Your personal best is saved on this device.'; });
   }
 
   function gradeText(vn, lv) { var f = vn / lv.vMax; return f < 0.2 ? 'Feather-soft touchdown' : f < 0.45 ? 'Smooth touchdown' : f < 0.75 ? 'Firm touchdown' : 'Hard, but inside the limit'; }
@@ -886,17 +1108,34 @@
   function showResult() {
     var s = G.sim, r = s.result, lv = G.level, card = $('#r-card'), h = '';
     G.resultShown = true;
+    if (!G.isReplay) saveReplayRecord();
     if (r.ok) {
-      var endless = G.endless, sv0 = endless ? { best: 0 } : lvSave(lv.id), wasNext = !endless && lv.id < LV.length && !unlocked(lv.id + 1), prevBest = sv0.best;
-      if (!endless) {
+      var endless = G.endless, daily = G.runType === 'daily', career = G.runType === 'career', sv0 = endless || daily ? { best: 0 } : lvSave(lv.id), wasNext = !endless && !daily && lv.id < LV.length && !unlocked(lv.id + 1), prevBest = sv0.best;
+      if (!endless && !daily) {
         var rec = save.levels[lv.id] || (save.levels[lv.id] = { done: false, ring: false, fuel: false, best: 0 });
         rec.done = true; if (r.stars.ring) rec.ring = true; if (r.stars.fuel) rec.fuel = true; if (r.score > rec.best) rec.best = r.score; persist();
       } else {
-        endless.landed++; endless.score += r.score - (r.parts.trick || 0); endless.bestLanding = Math.max(endless.bestLanding, r.score);
-        endless.verticalSum += Math.abs(r.vn); endless.fuelSum += r.fuelLeft;
+        if (endless) {
+          endless.landed++; endless.score += r.score - (r.parts.trick || 0); endless.bestLanding = Math.max(endless.bestLanding, r.score);
+          endless.verticalSum += Math.abs(r.vn); endless.fuelSum += r.fuelLeft;
+        }
       }
+      var payout = 0, dailyBest = 0;
+      if (career) {
+        var careerRec = save.career.contracts[lv.id] || (save.career.contracts[lv.id] = { done: false, best: 0, earned: 0 });
+        payout = Math.round((90 + lv.id * 14 + r.score / 18 + r.starCount * 28) * (r.rough ? 0.6 : 1) * (careerRec.done ? 0.22 : 1));
+        careerRec.done = true; careerRec.best = Math.max(careerRec.best || 0, r.score); careerRec.earned = (careerRec.earned || 0) + payout;
+        save.career.cash += payout;
+      }
+      if (daily) {
+        var priorDaily = save.daily.scores[G.dailyRun.date]; dailyBest = !priorDaily || r.score > priorDaily.score;
+        if (dailyBest) save.daily.scores[G.dailyRun.date] = { name: save.daily.name, score: r.score };
+      }
+      if (!endless && !daily && r.score > prevBest && G.lastReplay) { G.lastReplay.score = r.score; save.ghosts[lv.id] = cloneJson(G.lastReplay); }
+      if (daily && dailyBest && G.lastReplay) { G.lastReplay.score = r.score; save.daily.ghosts[G.dailyRun.date] = cloneJson(G.lastReplay); }
+      if (career || dailyBest || (!endless && r.score > prevBest)) persist();
       var side = Math.abs(r.uc) < 0.5 ? 'on the mark' : fmt(Math.abs(r.uc), 1) + ' m off centre';
-      h += '<div class="result-head"><p class="eyebrow">' + (endless ? 'Endless · ' + endless.difficulty + ' · round ' + endless.round : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + (endless ? (r.rough ? 'Rough landing' : 'Round clear') : (r.rough ? 'Rough landing' : 'Touchdown')) + '</h2></div>';
+      h += '<div class="result-head"><p class="eyebrow">' + (endless ? 'Endless · ' + endless.difficulty + ' · round ' + endless.round : daily ? 'Daily challenge · ' + G.dailyRun.date : career ? 'Career contract ' + lv.id : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + (endless ? (r.rough ? 'Rough landing' : 'Round clear') : (r.rough ? 'Rough landing' : 'Touchdown')) + '</h2></div>';
       if (endless) h += '<div class="arcade-stats"><div><b>' + String(endless.landed).padStart(2, '0') + '</b><span>LANDINGS</span></div><div><b id="r-total-score">' + endless.score + '</b><span>RUN SCORE</span></div></div>';
       h += r.rough ? '<p class="grade warn">Over the limit: ' + roughWhy(r, lv) + ' The legs held, but there are no points for a soft touchdown or attitude.</p>' : '<p class="grade">' + gradeText(r.vn, lv) + '. ' + fmt(r.vn, 1) + ' m/s down, ' + side + '.</p>';
       h += '<ul class="goals"><li class="ok">' + CHECK + '<span>Landed on the ship</span><em>1</em></li>';
@@ -905,11 +1144,17 @@
       var p = r.parts;
       h += '<table class="score"><tr><td>Landing</td><td>' + p.landing + '</td></tr><tr><td>Soft touchdown</td><td>+' + p.soft + '</td></tr><tr><td>Centring</td><td>+' + p.centre + '</td></tr><tr><td>Fuel left</td><td>+' + p.fuel + '</td></tr><tr><td>Attitude</td><td>+' + p.attitude + '</td></tr>';
       if (p.trick) h += '<tr><td>Backflip bonus</td><td>+' + p.trick + '</td></tr>';
+      if (career) h += '<tr><td>Contract payment</td><td>+$' + payout.toLocaleString() + '</td></tr>';
       h += '<tr class="total"><td>Score</td><td><span id="r-score">0</span>' + (r.score > prevBest && prevBest > 0 ? '<span class="tag-new">NEW BEST</span>' : '') + '</td></tr></table>';
       h += '<div class="actions">';
       if (endless) h += '<button class="btn primary" id="r-next">Next descent <small>Round ' + String(endless.round + 1).padStart(2, '0') + '</small></button>';
+      else if (career) h += '<button class="btn primary" id="r-career">Career contracts</button>';
+      else if (daily) h += '<button class="btn primary" id="r-daily-board">Today’s board</button>';
       else if (lv.id < LV.length) h += '<button class="btn primary" id="r-next">Next mission' + (wasNext ? ' · unlocked' : '') + '</button>'; else h += '<button class="btn primary" id="r-levels">All missions</button>';
-      h += '<div class="row"><button class="btn" id="r-retry">' + (endless ? 'Restart run' : 'Fly it again') + '</button>' + (lv.id < LV.length ? '<button class="btn ghost" id="r-levels">Missions</button>' : '') + '</div></div>';
+      h += '<div class="row"><button class="btn" id="r-retry">' + (endless ? 'Restart run' : 'Fly it again') + '</button>' + (lv.id < LV.length && !daily ? '<button class="btn ghost" id="r-levels">Missions</button>' : '') + '</div>';
+      h += '<div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export flight</button></div>';
+      if (daily) h += '<button class="btn ghost" id="r-submit">Submit verified score</button><p id="r-submit-status" class="daily-status">' + (dailyBest ? 'Personal best saved on this device.' : 'Personal best: ' + (save.daily.scores[G.dailyRun.date] ? save.daily.scores[G.dailyRun.date].score.toLocaleString() : '—')) + '</p>';
+      h += '</div>';
     } else {
       var m = failMsg(r, lv), ht = hazardTip(r, lv); if (ht) m.tip = ht;
       if (G.endless) {
@@ -919,11 +1164,12 @@
         h += '<div class="result-head death-head"><p class="eyebrow">' + e.difficulty + ' run · ' + (newBest ? 'new personal best' : 'best: ' + best.rounds + ' landings') + '</p><h2>Run over</h2></div>';
         h += '<p class="death-cause"><b>' + m.title + '</b><span>' + m.detail + '</span></p>';
         h += '<div class="arcade-stats death-stats"><div><b>' + String(e.landed).padStart(2, '0') + '</b><span>LANDINGS</span></div><div><b>' + e.score.toLocaleString() + '</b><span>TOTAL SCORE</span></div><div><b>' + e.bestLanding.toLocaleString() + '</b><span>BEST TOUCHDOWN</span></div><div><b>' + e.flips + '</b><span>BACKFLIPS</span></div><div><b>' + (mins + ':' + String(seconds % 60).padStart(2, '0')) + '</b><span>SURVIVAL TIME</span></div><div><b>' + (e.landed ? (e.verticalSum / e.landed).toFixed(1) : '—') + '</b><span>AVG DESCENT M/S</span></div><div><b>' + (e.landed ? Math.round(e.fuelSum / e.landed * 100) + '%' : '—') + '</b><span>AVG FUEL LEFT</span></div></div>';
-        h += '<p class="tip death-tip">' + m.tip + '</p><div class="actions"><button class="btn primary" id="r-retry">Run it back</button><button class="btn ghost" id="r-mode">Change difficulty</button><button class="btn ghost" id="r-levels">Missions</button></div>';
+        h += '<p class="tip death-tip">' + m.tip + '</p><div class="actions"><button class="btn primary" id="r-retry">Run it back</button><button class="btn ghost" id="r-mode">Change difficulty</button><button class="btn ghost" id="r-levels">Missions</button><div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export flight</button></div></div>';
       } else {
-        h += '<div class="result-head"><p class="eyebrow">Mission ' + lv.id + ' · ' + lv.name + '</p><h2>' + m.title + '</h2></div>';
+        var dailyFail = G.runType === 'daily', careerFail = G.runType === 'career';
+        h += '<div class="result-head"><p class="eyebrow">' + (dailyFail ? 'Daily challenge · ' + G.dailyRun.date : careerFail ? 'Career contract ' + lv.id : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + m.title + '</h2></div>';
         h += '<p class="grade bad">' + m.detail + '</p><div class="tip">' + m.tip + '</div>';
-        h += '<div class="actions"><button class="btn primary" id="r-retry">Try again</button><button class="btn ghost" id="r-levels">Missions</button></div>';
+        h += '<div class="actions"><button class="btn primary" id="r-retry">Try again</button>' + (careerFail ? '<button class="btn ghost" id="r-career">Career contracts</button>' : dailyFail ? '<button class="btn ghost" id="r-daily-board">Today’s board</button>' : '<button class="btn ghost" id="r-levels">Missions</button>') + '<div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export flight</button></div>' + (dailyFail ? '<p id="r-submit-status" class="daily-status">A successful landing is required for the daily board.</p>' : '') + '</div>';
       }
     }
     card.innerHTML = h;
@@ -932,6 +1178,11 @@
     if (q('r-retry')) q('r-retry').addEventListener('click', function () { Snd.click(); if (G.endless) startEndless(G.endless.difficulty); else retry(); });
     if (q('r-levels')) q('r-levels').addEventListener('click', function () { Snd.click(); openLevels(); });
     if (q('r-mode')) q('r-mode').addEventListener('click', function () { Snd.click(); G.endless = null; openEndless(); });
+    if (q('r-career')) q('r-career').addEventListener('click', openCareer);
+    if (q('r-daily-board')) q('r-daily-board').addEventListener('click', openDaily);
+    if (q('r-watch')) q('r-watch').addEventListener('click', function () { Snd.click(); if (G.lastReplay) startReplay(G.lastReplay, false); });
+    if (q('r-export')) q('r-export').addEventListener('click', exportReplay);
+    if (q('r-submit')) q('r-submit').addEventListener('click', submitDailyScore);
     setScreen('result');
     if (r.ok) countUp(q('r-score'), r.score);
   }
@@ -955,6 +1206,7 @@
       case 'spin': return { title: 'Spinning', detail: 'The booster was still rotating at touchdown.', tip: 'Stop a spin with a short tap on the opposite tilt button. Keep stability assist on.' };
       case 'edge': return { title: 'Clipped the edge', detail: 'One leg was off the pad.', tip: 'Aim for the glowing ring in the middle. Use the marker above the ship to line up early.' };
       case 'sea': return { title: 'Splashdown', detail: 'You missed the ship and hit the water.', tip: 'Steer sideways while you still have height. The ship arrow shows which way to lean.' };
+      case 'ground': return { title: 'Missed the pad', detail: 'You struck the surface outside the landing platform.', tip: 'Keep the pad in view and cancel your sideways drift before the last 100 metres.' };
       case 'tilt-body': return { title: 'Fell over', detail: 'The booster came in off its legs.', tip: 'Keep it upright. Legs first, nose up.' };
       default: return { title: 'Lost the booster', detail: 'The legs were not down in time.', tip: 'Give the legs a few seconds to lock before you touch down.' };
     }
@@ -985,7 +1237,10 @@
   window.addEventListener('keydown', function (e) {
     Snd.init();
     var c = e.code;
-    if (G.mode === 'fly') {
+    if (G.mode === 'replay') {
+      if (c === 'Escape') { e.preventDefault(); endReplay(); }
+      else if (c === 'KeyR' && !e.repeat && G.lastReplay) { e.preventDefault(); startReplay(G.lastReplay, G.replayReturnMenu); }
+    } else if (G.mode === 'fly') {
       if (c === 'Escape' || c === 'KeyP') { e.preventDefault(); pause(!G.paused); return; }
       if (G.paused) return;
       if (c === 'ArrowLeft' || c === 'KeyA') { key.l = true; e.preventDefault(); }
@@ -1009,6 +1264,16 @@
   on('m-play', function () { openBrief(nextLevelId()); });
   on('m-levels', openLevels);
   on('m-endless', openEndless);
+  on('m-career', openCareer);
+  on('m-daily', openDaily);
+  on('m-import', function () { $('#replay-file').click(); });
+  $('#replay-file').addEventListener('change', function () {
+    var file = this.files && this.files[0]; this.value = ''; if (!file || file.size > 2 * 1024 * 1024) return;
+    var reader = new FileReader(); reader.onload = function () {
+      try { var replay = JSON.parse(reader.result); if (!startReplay(replay, true)) throw new Error('invalid replay'); }
+      catch (e) { $('#m-progress').textContent = 'That replay file could not be read.'; }
+    }; reader.readAsText(file);
+  });
   on('e-back', openMenu);
   Array.prototype.forEach.call(document.querySelectorAll('[data-endless]'), function (b) { b.addEventListener('click', function () { Snd.init(); Snd.click(); startEndless(b.getAttribute('data-endless')); }); });
   on('m-settings', function () { openSettings('menu'); });
@@ -1023,7 +1288,10 @@
   document.getElementById('s-reset').addEventListener('click', function () {
     var b = this;
     if (!b._arm) { b._arm = true; b.textContent = 'Tap again to erase everything'; setTimeout(function () { b._arm = false; b.textContent = 'Reset progress'; }, 3500); return; }
-    save.levels = {}; persist(); b._arm = false; b.textContent = 'Progress erased'; buildMenu();
+    save.levels = {}; save.ghosts = {}; save.endless = {};
+    save.career = { cash: 850, contracts: {}, upgrades: { engine: 0, tank: 0, steering: 0 } };
+    save.daily = { name: 'PILOT', scores: {}, ghosts: {} };
+    persist(); b._arm = false; b.textContent = 'Progress erased'; buildMenu();
   });
 
   // ------------------------------------------------------------------ loop
@@ -1046,6 +1314,13 @@
         if (s.y > 3200 && !G.highEgg) { G.highEgg = true; showSecret('high', 'UNKNOWN CONTACT · TRANSPONDER OFF'); }
       }
       if (s.status !== 'flying') { G.mode = 'ended'; G.endTimer = 0; resetInput(); chrome(); }
+    } else if (G.mode === 'replay') {
+      stepSim(dt, function () { return consumeTrace(G.replayTrack); });
+      emitFx(s, dt);
+      if (s.status !== 'flying') {
+        G.replayTime += dt;
+        if (G.replayTime > 1.55) endReplay();
+      }
     } else if (G.mode === 'ended') {
       stepSim(dt, function () { return inp; });
       G.endTimer += dt;
@@ -1059,7 +1334,7 @@
     if (G.secretTime > 0) { G.secretTime = Math.max(0, G.secretTime - dt); if (!G.secretTime) $('#easter-egg').hidden = true; }
     if (!(G.mode === 'fly' && G.paused)) updateParts(dt);
     render(dt);
-    if (G.mode === 'fly' || G.mode === 'ended') updateHud(dt);
+    if (G.mode === 'fly' || G.mode === 'ended' || G.mode === 'replay') updateHud(dt);
     var active = G.mode === 'fly' && !G.paused && s.status === 'flying';
     var sp = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
     Snd.loops(s.throttle || 0, sp, s.rot, active || (G.attract && s.status === 'flying' && false));
@@ -1068,9 +1343,25 @@
     var s = G.sim;
     G.acc += dt;
     var n = 0;
-    while (G.acc >= Sim.DT && n < 14) { Sim.step(s, fn(), Sim.DT); G.acc -= Sim.DT; n++; }
+    while (G.acc >= Sim.DT && n < 14) {
+      var control = fn();
+      if (G.mode === 'fly' && G.recording) appendTrace(control);
+      Sim.step(s, control, Sim.DT);
+      if (G.ghostSim && G.ghostTrack) Sim.step(G.ghostSim, consumeTrace(G.ghostTrack), Sim.DT);
+      G.acc -= Sim.DT; n++;
+    }
     if (G.acc > Sim.DT * 14) G.acc = 0;
     handleEvents(s);
+  }
+  function endReplay() {
+    if (G.replayReturnMenu) { G.replayReturnMenu = false; openMenu(); return; }
+    var origin = G.replayOrigin;
+    if (origin) {
+      G.runType = origin.runType; G.endless = origin.endless; G.careerRun = origin.careerRun; G.dailyRun = origin.dailyRun;
+      G.cur = origin.cur; G.seed = origin.seed; G.level = origin.level; G.th = THEMES[G.level.sky]; G.mode = origin.mode;
+      G.replayOrigin = null;
+    }
+    G.mode = 'ended'; G.resultShown = true; G.attract = false; G.ghostSim = null; setScreen('result'); chrome();
   }
 
   // shrink the title if the font it ended up with is wider than the screen

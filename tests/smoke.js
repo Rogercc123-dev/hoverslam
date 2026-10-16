@@ -1,6 +1,7 @@
 // Headless smoke test with a strict hand-made DOM and canvas stand-in (no jsdom available offline).
 const fs = require('fs'), vm = require('vm');
 const html = fs.readFileSync(__dirname + '/../public/index.html', 'utf8');
+const LVN = require('../src/sim.js').LEVELS.length;
 const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
 
 const METHODS = ['save', 'restore', 'translate', 'rotate', 'scale', 'setTransform', 'beginPath', 'closePath', 'moveTo', 'lineTo', 'arc', 'ellipse', 'quadraticCurveTo', 'bezierCurveTo', 'rect', 'fill', 'stroke', 'clip', 'fillRect', 'strokeRect', 'clearRect', 'fillText', 'strokeText', 'setLineDash', 'drawImage'];
@@ -87,10 +88,10 @@ check(drawCalls > 1000, 'attract mode drew frames (' + drawCalls + ' calls)');
 
 // 2. every mission opens a briefing
 fire('m-levels'); frames(3);
-check(visible('levels') && byId('l-grid').children.length === 15, 'mission grid has 15 tiles');
+check(visible('levels') && byId('l-grid').children.length === LVN, 'mission grid has ' + LVN + ' tiles');
 const tiles = byId('l-grid').children;
 check(tiles[0].disabled === false && tiles[1].disabled === true, 'only mission 1 unlocked on a fresh save');
-for (let i = 0; i < 15; i++) { H.G.cur = i + 1; win.localStorage._d = {}; }
+for (let i = 0; i < LVN; i++) { H.G.cur = i + 1; win.localStorage._d = {}; }
 fire('l-back'); frames(3);
 
 // 3. brief -> launch -> fly with keyboard, then pause/resume
@@ -134,7 +135,8 @@ H.ctrl = null;
 
 // 6. every mission, every sky theme: autopilot flight plus a no-input crash, all through the strict renderer
 const outcomes = {};
-for (let id = 1; id <= 15; id++) {
+const seenHazard = {};
+for (let id = 1; id <= LVN; id++) {
   for (const mode of ['auto', 'idle']) {
     fire('l-back'); frames(2); fire('m-levels'); frames(2);
     const tile = byId('l-grid').children[id - 1];
@@ -144,7 +146,16 @@ for (let id = 1; id <= 15; id++) {
     frames(30);
     fire('b-go'); frames(2);
     H.ctrl = mode === 'auto' ? (s) => win.Sim.autopilot(s) : null;
-    let g = 0; while (H.G.mode === 'fly' && g++ < 60 * 100) frames(1);
+    let g = 0;
+    while (H.G.mode === 'fly' && g++ < 60 * 100) {
+      frames(1);
+      if (mode === 'auto') {
+        const cueTx = byId('cue').textContent, altTx = byId('v-alt').textContent;
+        if (cueTx === 'ENGINE OUT') seenHazard[id + 'fault'] = true;
+        if (cueTx === 'NO DATA' && altTx === '--') seenHazard[id + 'dark'] = true;
+        if (H.G.sim.level.leak && H.G.sim.fuel < H.G.sim.level.fuel - 0.02) seenHazard[id + 'leak'] = true;
+      }
+    }
     frames(60 * 3);
     if (!visible('result')) { console.log('FAIL: no result card for level', id, mode, H.G.sim.status); process.exit(1); }
     const title = (byId('r-card').innerHTML.match(/<h2>(.*?)<\/h2>/) || [])[1];
@@ -154,8 +165,21 @@ for (let id = 1; id <= 15; id++) {
 }
 console.log(JSON.stringify(outcomes));
 const okAuto = Object.keys(outcomes).filter(k => k.endsWith('a') && outcomes[k] === 'Touchdown').length;
-check(okAuto >= 13, 'autopilot touched down on ' + okAuto + '/15 missions through the full UI');
-check(Object.keys(outcomes).filter(k => k.endsWith('i') && outcomes[k] !== 'Touchdown').length === 15, 'idle flights all end in a failure card');
+check(okAuto >= LVN - 2, 'autopilot touched down on ' + okAuto + '/' + LVN + ' missions through the full UI');
+for (const lv of win.Sim.LEVELS) {
+  if (lv.fault) check(seenHazard[lv.id + 'fault'], 'mission ' + lv.id + ' shows the ENGINE OUT alert in flight');
+  if (lv.blackout) check(seenHazard[lv.id + 'dark'], 'mission ' + lv.id + ' blanks the readouts and shows NO DATA');
+  if (lv.leak) check(seenHazard[lv.id + 'leak'], 'mission ' + lv.id + ' loses fuel with the engine mostly off');
+}
+check(Object.keys(outcomes).filter(k => k.endsWith('i') && outcomes[k] !== 'Touchdown').length === LVN, 'idle flights all end in a failure card');
+// 6b. every mission with a hazard explains it in its briefing
+for (const lv of win.Sim.LEVELS) {
+  if (!lv.hazard) continue;
+  fire('l-back'); frames(2); fire('m-levels'); frames(2);
+  byId('l-grid').children[lv.id - 1]._l.click.forEach(f => f({})); frames(2);
+  if (!/Hazard\./.test(byId('b-how').innerHTML) || !byId('b-how').innerHTML.includes(lv.hazard.slice(0, 20))) { console.log('FAIL: no hazard text in briefing for', lv.id); process.exit(1); }
+}
+console.log('ok   all ' + win.Sim.LEVELS.filter(l => l.hazard).length + ' hazard briefings show their warning');
 // 7. clumsy-player flights: a rough landing (over the limit, legs hold) must show its own card and still count
 let roughCard = null, tries = 0;
 while (!roughCard && tries++ < 60) {

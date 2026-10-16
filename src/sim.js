@@ -84,7 +84,10 @@
     L({ id: 19, name: 'Leaky Tank', sky: 'dawn', blurb: 'There is a hole in the tank and fuel is pouring out.', hazard: 'Fuel drains steadily even when the engine is off. Do not hang about.', alt: 1000, dx: [80, 200], vx: 7, vy: -46, deck: 66, swell: 1.6, wind: 1.0, gust: 0.5, shipV: 2, leak: 0.0045, fuel: 0.75, burn: 0.0155, fuelGoal: 0.41, ring: 6, vMax: 7.5, hMax: 4.5, aMax: 0.24 }),
     L({ id: 20, name: 'Evasive', sky: 'day', blurb: 'The captain is zigzagging to dodge the swell. Good luck.', hazard: 'The ship weaves left and right at speed. Match its sideways speed or you will skid.', alt: 1000, dx: [60, 180], vx: 7, vy: -44, deck: 66, swell: 2.8, wind: 0.8, gust: 0.5, shipV: 6.5, zig: 0.4, fuel: 0.85, burn: 0.0155, fuelGoal: 0.58, ring: 6, vMax: 7.5, hMax: 4.2, aMax: 0.22 }),
     L({ id: 21, name: 'Blackout', sky: 'night', blurb: 'A storm and a failing instrument panel.', hazard: 'Your readouts and guidance drop out for a few seconds near the end. Trust your eyes.', alt: 1000, dx: [80, 220], vx: 8, vy: -46, deck: 62, swell: 2.4, wind: 1.4, gust: 1.4, shipV: 2.5, blackout: [460, 160], fuel: 0.8, burn: 0.0155, fuelGoal: 0.54, ring: 5.5, vMax: 7, hMax: 4.2, aMax: 0.22 }),
-    L({ id: 22, name: 'Hoverslam', sky: 'night', blurb: 'Everything at once. One burn, no mistakes.', hazard: 'Tumbling start, a fleeing ship, a weak engine that can cut out, a gale and a tiny pad.', alt: 1150, dx: [80, 180], vx: 7, vy: -56, tiltMin: 0.6, tilt: 1.1, om0: 0.5, deck: 50, swell: 2.4, wind: 1.6, gust: 1.0, shipV: 3.5, away: true, thrust: 0.92, fault: { hi: 520, lo: 340, d0: 1.2, d1: 1.8 }, fuel: 0.72, burn: 0.0158, fuelGoal: 0.45, ring: 5, vMax: 6.5, hMax: 4, aMax: 0.2 })
+    L({ id: 22, name: 'Hoverslam', sky: 'night', blurb: 'Everything at once. One burn, no mistakes.', hazard: 'Tumbling start, a fleeing ship, a weak engine that can cut out, a gale and a tiny pad.', alt: 1150, dx: [80, 180], vx: 7, vy: -56, tiltMin: 0.6, tilt: 1.1, om0: 0.5, deck: 50, swell: 2.4, wind: 1.6, gust: 1.0, shipV: 3.5, away: true, thrust: 0.92, fault: { hi: 520, lo: 340, d0: 1.2, d1: 1.8 }, fuel: 0.72, burn: 0.0158, fuelGoal: 0.45, ring: 5, vMax: 6.5, hMax: 4, aMax: 0.2 }),
+    L({ id: 23, name: 'Mare Tranquillitatis', sky: 'moon', terrain: 'moon', gravity: 1.62, padName: 'M-04', blurb: 'A quiet touchdown in Mare Tranquillitatis. Low gravity stretches every correction.', alt: 620, dx: [85, 210], vx: 5, vy: -25, deck: 68, swell: 0, wind: 0, gust: 0, shipV: 0, fuel: 0.58, burn: 0.012, fuelGoal: 0.31, ring: 7, vMax: 7, hMax: 4.5, aMax: 0.24 }),
+    L({ id: 24, name: 'Red Horizon', sky: 'mars', terrain: 'mars', gravity: 3.71, padName: 'A-12', blurb: 'Dust hangs over the Ares landing pad. The thin air offers almost no steering help.', alt: 780, dx: [100, 250], vx: 7, vy: -34, deck: 60, swell: 0, wind: 0.35, gust: 0.12, shipV: 0, fuel: 0.67, burn: 0.013, fuelGoal: 0.38, ring: 6, vMax: 8, hMax: 5, aMax: 0.25 }),
+    L({ id: 25, name: 'Black Squall', sky: 'stormNight', blurb: 'A night recovery in a hard squall. Rain, crosswind and a rolling deck.', hazard: 'Storm gusts reverse near the surface. Keep fuel for the last correction.', alt: 980, dx: [90, 220], vx: 9, vy: -48, deck: 58, swell: 2.4, wind: 1.5, gust: 1.45, shear: 340, shipV: 2.2, fuel: 0.68, burn: 0.0155, fuelGoal: 0.4, ring: 5.5, vMax: 7, hMax: 4.2, aMax: 0.22 })
   ];
 
   // ---------------------------------------------------------------- environment
@@ -152,7 +155,19 @@
     return Math.min(toDeck(D, f[0].x, f[0].y).v, toDeck(D, f[1].x, f[1].y).v);
   }
   function massRatio(s) { return 0.7 + 0.3 * s.fuel; }
+  function gravity(s) { return s.level.gravity || G; }
   function maxAccel(s) { return THRUST * s.level.thrust / massRatio(s); }
+
+  function dailyChallenge(date) {
+    date = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : new Date().toISOString().slice(0, 10);
+    var h = 2166136261;
+    for (var i = 0; i < date.length; i++) { h ^= date.charCodeAt(i); h = Math.imul(h, 16777619); }
+    h >>>= 0;
+    var level = {}, base = LEVELS[h % LEVELS.length];
+    Object.keys(base).forEach(function (k) { level[k] = base[k]; });
+    level.id = 1000 + (h % LEVELS.length); level.name = 'Daily Flight'; level.blurb = 'One shared, seeded descent. Same conditions for every pilot today.';
+    return { date: date, seed: h || 1, level: level };
+  }
 
   // ---------------------------------------------------------------- creation
   function createSim(level, seed, opts) {
@@ -225,7 +240,7 @@
     var aT = maxAccel(s) * s.throttle;
     var kd = dragK(s.y), sp = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
     var ax = -Math.sin(s.th) * aT + windAccel(s, s.y) - kd * sp * s.vx;
-    var ay = Math.cos(s.th) * aT - G - kd * sp * s.vy;
+    var ay = Math.cos(s.th) * aT - gravity(s) - kd * sp * s.vy;
     s.vx += ax * dt; s.vy += ay * dt;
     s.x += s.vx * dt; s.y += s.vy * dt;
     s.fuel = Math.max(0, s.fuel - (lv.burn * s.throttle + lv.leak) * dt);
@@ -265,9 +280,9 @@
     }
     var pts = [fp[0], fp[1], toWorld(s, 0, -17.2)];
     for (var k = 0; k < pts.length; k++) {
-      if (pts[k].y <= swellH(lv, pts[k].x, s.t)) {
+      if (pts[k].y <= (lv.terrain ? 0 : swellH(lv, pts[k].x, s.t))) {
         var du = toDeck(D, pts[k].x, pts[k].y).u;
-        return finish(s, D, 'sea', du);
+        return finish(s, D, lv.terrain ? 'ground' : 'sea', du);
       }
     }
   }
@@ -373,7 +388,7 @@
   function burnCue(s) {
     var T = telemetry(s);
     if (T.vn < 12 || s.throttle > 0.4) return 0;
-    var aNet = Math.max(2, maxAccel(s) * Math.max(0.6, Math.cos(s.th)) - G);
+    var g = gravity(s), aNet = Math.max(1, maxAccel(s) * Math.max(0.6, Math.cos(s.th)) - g);
     var d = T.vn * T.vn / (2 * aNet) * (s.level.fault ? 1.4 : 1);
     if (T.alt < d * 1.12) return 2;
     if (T.alt < d * 1.7) return 1;
@@ -387,7 +402,7 @@
     for (var i = 0; i < 160; i++) {
       var kd = dragK(y), sp = Math.sqrt(vx * vx + vy * vy);
       vx += (windAccel(s, y, t) - kd * sp * vx) * dt;
-      vy += (-G - kd * sp * vy) * dt;
+      vy += (-gravity(s) - kd * sp * vy) * dt;
       x += vx * dt; y += vy * dt; t += dt;
       pts.push({ x: x, y: y });
       var xs = s.ship.x + (lv.zig ? 0 : s.ship.v * (t - s.t));
@@ -407,7 +422,7 @@
     var alt = altitude(s, D);
     var dx = s.x - D.x, dvx = s.vx - D.vx, dvy = s.vy - D.vy;
     var cosT = Math.max(0.6, Math.cos(s.th));
-    var aNet = Math.max(2, aMax * cosT - G);
+    var g = gravity(s), aNet = Math.max(1, aMax * cosT - g);
     var aProf = (tune.prof || 0.5) * aNet;
     var vyd = -(1.4 + Math.sqrt(2 * aProf * Math.max(alt - 2.0, 0)));
 
@@ -420,9 +435,9 @@
     var axd = clamp(2.0 * (vxd - dvx) - wcomp, -axLim, axLim);
 
     var ff = aProf * clamp((alt - 3) / 25, 0, 1);
-    var ayTotal = clamp(G + ff + 3.0 * (vyd - dvy), 0, aMax * 1.6);
+    var ayTotal = clamp(g + ff + 3.0 * (vyd - dvy), 0, aMax * 1.6);
     var tanMax = Math.tan(0.5);
-    var ayAtt = Math.max(ayTotal, 0.9 * G, Math.abs(axd) / tanMax);
+    var ayAtt = Math.max(ayTotal, 0.9 * g, Math.abs(axd) / tanMax);
     var thD = -Math.atan2(axd, ayAtt);
     var thr;
     if (ayTotal <= 0.01) {
@@ -443,7 +458,7 @@
     FOOT_Y: FOOT_Y, FOOT_SPAN: FOOT_SPAN, FOLD_SPAN: FOLD_SPAN, FOLD_Y: FOLD_Y, ROT_MAX: ROT_MAX, LEG_ALT: LEG_ALT,
     createSim: createSim, step: step, advanceTime: advanceTime, deckPose: deckPose, toDeck: toDeck, toWorld: toWorld, feet: feet, legGeom: legGeom,
     altitude: altitude, swellH: swellH, swellSlope: swellSlope, windAccel: windAccel,
-    telemetry: telemetry, burnCue: burnCue, predict: predict, autopilot: autopilot, maxAccel: maxAccel, rng: rng
+    telemetry: telemetry, burnCue: burnCue, predict: predict, autopilot: autopilot, maxAccel: maxAccel, rng: rng, dailyChallenge: dailyChallenge
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Sim; else root.Sim = Sim;
 })(typeof self !== 'undefined' ? self : this);

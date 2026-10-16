@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Inlines sim.js and app.js into template.html and writes a standalone page to public/index.html.
+// Inlines sim.js and app.js into template.html and writes standalone deployable pages.
 const fs = require('fs');
 const path = require('path');
 
@@ -18,7 +18,7 @@ const headPart = tpl.slice(0, split);
 const bodyPart = tpl.slice(split).replace('/*SIM*/', () => sim).replace('/*APP*/', () => app);
 
 const icon = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%2307111c'/%3E%3Crect x='13' y='4' width='6' height='17' rx='2.4' fill='%23f1f4f7'/%3E%3Crect x='13' y='7' width='6' height='3.2' fill='%23171b21'/%3E%3Cpath d='M16 30l-4-8.5h8z' fill='%23ff7a35'/%3E%3C/svg%3E";
-const blurb = 'Land a rocket booster on a drone ship. 15 missions with wind, swell and a moving deck.';
+const blurb = 'Land a rocket booster on a drone ship. Build a career, explore new worlds, and take the daily challenge.';
 
 const head = [
   '<!doctype html>',
@@ -45,4 +45,6 @@ const html = head + headPart + '</head>\n<body>\n' + bodyPart + '\n</body>\n</ht
 const outDir = path.join(__dirname, '..', 'public');
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(path.join(outDir, 'index.html'), html);
+// Keep a root entry point too, so the repository can also be deployed directly by GitHub Pages.
+fs.writeFileSync(path.join(__dirname, '..', 'index.html'), html);
 console.log('wrote public/index.html (' + Buffer.byteLength(html) + ' bytes)');

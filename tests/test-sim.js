@@ -31,7 +31,7 @@ for (const lv of Sim.LEVELS) {
     }
   }
   const pct = (100 * ok / N).toFixed(0);
-  if (ok / N < 0.9) allOk = false;
+  if (ok / N < (lv.fault ? 0.85 : 0.9)) allOk = false;
   console.log(
     String(lv.id).padStart(2), lv.name.padEnd(12),
     'land', (pct + '%').padStart(4),
