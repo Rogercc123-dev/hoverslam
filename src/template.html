@@ -95,7 +95,7 @@
   .menu-bottom .row .btn { flex: 1; min-width: 0; }
   .foot { margin: 4px 0 0; font: 500 12px/1.3 var(--font-mono); color: #c3d2de; letter-spacing: 0.04em; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6); }
 
-  .career-card, .daily-card { width: min(760px, 100%); }
+  .career-card, .daily-card { width: min(900px, 100%); }
   .career-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(210px, .8fr); gap: 18px; }
   .career-list, .upgrade-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .contract, .upgrade { display: flex; align-items: center; gap: 12px; min-height: 54px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 5px; background: rgba(255,255,255,.035); text-align: left; cursor: pointer; }
@@ -104,6 +104,23 @@
   .contract .contract-copy, .upgrade .contract-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .contract small, .upgrade small { color: var(--muted); font: 500 10px/1.3 var(--font-mono); }
   .contract .contract-state { color: var(--go); font: 600 10px/1 var(--font-mono); }
+  .contract.offer { border-color: rgba(255,178,94,.28); background: linear-gradient(110deg,rgba(255,122,53,.1),rgba(255,255,255,.025)); }
+  .contract.offer:hover { border-color: rgba(255,178,94,.65); }
+  .contract.repeat { border-style: dashed; }
+  .contract.recovery { border-color: rgba(88,224,162,.32); }
+  .career-progress { display:grid; grid-template-columns:1fr auto; gap:7px 12px; align-items:center; color:var(--muted); font:500 10px/1.3 var(--font-mono); }
+  .career-progress i { grid-column:1 / -1; height:5px; background:rgba(255,255,255,.1); border-radius:4px; overflow:hidden; }
+  .career-progress i b { display:block; height:100%; background:linear-gradient(90deg,var(--flame),var(--go)); }
+  .contract-terms { margin-top:8px; }
+  .contract-terms dd { font-size:10px; }
+  .insurance-choice { display:flex; align-items:flex-start; gap:9px; padding:10px; border:1px solid var(--line); border-radius:4px; background:rgba(255,255,255,.035); font:500 11px/1.3 var(--font-mono); }
+  .insurance-choice input { accent-color:var(--go); margin:2px 0 0; }
+  .insurance-choice span { display:flex; flex-direction:column; gap:3px; }
+  .insurance-choice small { color:var(--muted); }
+  #b-contract { padding-top:4px; }
+  .entry-tutorial { display:flex; flex-direction:column; gap:5px; padding:10px 12px; border-left:3px solid var(--flame); background:rgba(255,122,53,.08); color:#d8e5ee; font-size:13px; }
+  .entry-tutorial > b { color:var(--flame-hi); font:600 10px/1 var(--font-mono); letter-spacing:.12em; }
+  .entry-tutorial span { line-height:1.45; }
   .career-cash { color: var(--go); font: 900 38px/.9 var(--font-display); }
   .career-cash small { display:block; margin-top:5px; color:var(--muted); font:500 9px/1 var(--font-mono); letter-spacing:.14em; }
   .daily-meta { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; color:var(--muted); font:500 11px/1.3 var(--font-mono); }
@@ -259,6 +276,9 @@
   .cue[data-s="1"] { color: #1c1204; background: var(--warn); border-color: var(--warn); }
   .cue[data-s="2"] { color: #fff; background: var(--bad); border-color: var(--bad); animation: blink 0.45s steps(2) infinite; }
   .cue[data-s="3"] { color: #0a2218; background: var(--go); border-color: var(--go); }
+  .entry-hud { align-self:center; margin-top:-2px; padding:6px 10px; border:1px solid rgba(255,178,94,.4); border-radius:3px; background:rgba(8,19,31,.72); color:var(--flame-hi); font:600 10px/1 var(--font-mono); letter-spacing:.16em; text-align:center; }
+  .entry-hud[data-state="powered"] { color:#a9f5d5; border-color:rgba(88,224,162,.45); }
+  .entry-hud[data-state="flip-window"] { color:#fff; background:rgba(255,122,53,.82); border-color:var(--flame); animation:blink .75s steps(2) infinite; }
   .hint { position: absolute; left: 0; right: 0; bottom: 138px; z-index: 10; text-align: center; padding: 0 16px; pointer-events: none; font: 500 14px/1.4 var(--font-mono); color: #fff; text-shadow: 0 1px 10px rgba(0, 0, 0, 0.8); }
   .hint span { display: inline-block; padding: 8px 12px; border-radius: 4px; background: rgba(8, 19, 31, 0.6); }
 
@@ -307,6 +327,7 @@
       </div>
     </div>
     <div class="cue" id="cue" hidden>COAST</div>
+    <div class="entry-hud" id="entry-hud" hidden><span id="entry-state">BELLY-FLOP ENTRY</span> <small id="entry-load">DRAG 0%</small></div>
   </div>
   <div class="arcade-hud" id="arcade-hud" hidden><span>ROUND <b id="arcade-round">01</b></span><i></i><span>SCORE <strong id="arcade-score">0</strong></span></div>
   <div id="round-callout" class="round-callout" hidden><b id="round-callout-n">02</b><span id="round-callout-name">Next recovery</span></div>
@@ -375,6 +396,7 @@
       </div>
       <p id="b-blurb"></p>
       <dl class="specs" id="b-specs"></dl>
+      <div id="b-contract" hidden></div>
       <div><h3>Star goals</h3><ul class="goals" id="b-goals" style="margin-top:8px"></ul></div>
       <div class="howto" id="b-how"></div>
       <div class="actions">

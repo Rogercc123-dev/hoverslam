@@ -5,7 +5,7 @@ const LVN = require('../src/sim.js').LEVELS.length;
 const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
 
 const METHODS = ['save', 'restore', 'translate', 'rotate', 'scale', 'setTransform', 'beginPath', 'closePath', 'moveTo', 'lineTo', 'arc', 'ellipse', 'quadraticCurveTo', 'bezierCurveTo', 'rect', 'fill', 'stroke', 'clip', 'fillRect', 'strokeRect', 'clearRect', 'fillText', 'strokeText', 'setLineDash', 'drawImage'];
-const PROPS = ['fillStyle', 'strokeStyle', 'lineWidth', 'lineCap', 'lineJoin', 'globalAlpha', 'globalCompositeOperation', 'font', 'textAlign', 'textBaseline', 'shadowBlur', 'shadowColor'];
+const PROPS = ['fillStyle', 'strokeStyle', 'lineWidth', 'lineCap', 'lineJoin', 'globalAlpha', 'globalCompositeOperation', 'font', 'textAlign', 'textBaseline', 'shadowBlur', 'shadowColor', 'imageSmoothingEnabled'];
 let drawCalls = 0;
 const ctxStore = {};
 const ctx = new Proxy({}, {
@@ -26,14 +26,23 @@ function makeEl(id) {
     style: { setProperty() {}, transform: '', opacity: '', width: '' },
     classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, toggle(c, f) { f ? this._s.add(c) : this._s.delete(c); }, contains(c) { return this._s.has(c); } },
     addEventListener(t, f) { (this._l[t] = this._l[t] || []).push(f); },
-    appendChild(c) { this.children.push(c); }, setAttribute() {}, getAttribute() { return null; }, setPointerCapture() {}, focus() {}, blur() {},
+    appendChild(c) { this.children.push(c); }, setAttribute() {}, getAttribute(name) { return this._attrs && this._attrs[name] || null; }, setPointerCapture() {}, focus() {}, blur() {},
+    querySelectorAll(sel) {
+      if (this._queryMarkup !== this.innerHTML) { this._queryMarkup = this.innerHTML; this._queryCache = {}; }
+      if (this._queryCache && this._queryCache[sel]) return this._queryCache[sel];
+      const attr = (sel.match(/data-([a-z-]+)/) || [])[1]; if (!attr) return [];
+      const re = new RegExp('<button\\b[^>]*\\bdata-' + attr + '="([^"]+)"[^>]*>', 'gi'), out = []; let m;
+      while ((m = re.exec(this.innerHTML))) { const child = makeEl(id + '-dynamic'); child.dataset[attr] = m[1]; child._attrs = {}; child._attrs['data-' + attr] = m[1]; out.push(child); }
+      this._queryCache[sel] = out; return out;
+    },
     getContext() { return ctx; }
   };
   return el;
 }
 const DYN = ['r-next', 'r-retry', 'r-levels', 'r-score'];
 function byId(id) {
-  if (!ids.has(id)) return null;
+  const dynamic = Object.keys(els).some(k => typeof els[k].innerHTML === 'string' && els[k].innerHTML.includes('id="' + id + '"'));
+  if (!ids.has(id) && !dynamic) return null;
   if (DYN.includes(id) && !(els['r-card'] && els['r-card'].innerHTML.includes('id="' + id + '"'))) return null;
   return els[id] || (els[id] = makeEl(id));
 }
@@ -41,6 +50,12 @@ const doc = {
   hidden: false, activeElement: null, fonts: { ready: Promise.resolve() },
   getElementById: byId,
   querySelector(sel) { return sel[0] === '#' ? byId(sel.slice(1)) : null; },
+  querySelectorAll(sel) {
+    const attr = (sel.match(/data-([a-z-]+)/) || [])[1]; if (!attr) return [];
+    const re = new RegExp('<button\\b[^>]*\\bdata-' + attr + '="([^"]+)"[^>]*>', 'gi'), out = []; let m;
+    while ((m = re.exec(html))) { const child = makeEl('static-dynamic'); child.dataset[attr] = m[1]; child._attrs = {}; child._attrs['data-' + attr] = m[1]; out.push(child); }
+    return out;
+  },
   createElement(t) { const e = makeEl(null); e.tag = t; return e; },
   addEventListener(t, f) { (doc._l[t] = doc._l[t] || []).push(f); }, _l: {}
 };
@@ -196,5 +211,39 @@ check(!!roughCard, 'a rough landing card appeared after ' + tries + ' clumsy fli
 check(/grade warn/.test(roughCard) && /no points for a soft touchdown/.test(roughCard) && /Next mission/.test(roughCard), 'rough card explains the penalty and offers the next mission');
 const savedRough = JSON.parse(win.localStorage._d['hoverslam.v1']);
 check(savedRough.levels['1'] && savedRough.levels['1'].done, 'rough landing still counts as cleared');
+
+// 8. career offers, term billing, insured flights, repeat terms, upgrades and the zero-cash recovery path
+fire('m-career'); frames(3);
+const careerCard = byId('career-card');
+check(visible('career') && /Atlantic recovery/.test(careerCard.innerHTML), 'career opens on the Atlantic chapter');
+check((careerCard.innerHTML.match(/class="contract offer"/g) || []).length === 3, 'career board presents three authored offers at a time');
+const firstOffer = careerCard.querySelectorAll('[data-contract]').find(b => b.dataset.contract === '1');
+firstOffer._l.click.forEach(f => f({})); frames(2);
+check(visible('brief') && /Operating cost/.test(byId('b-contract').innerHTML) && /Repair exposure/.test(byId('b-contract').innerHTML) && /Insurance/.test(byId('b-contract').innerHTML), 'career briefing discloses costs, repair cap and insurance');
+byId('b-insure').checked = true;
+const cashBeforeCareer = H.save.career.cash;
+fire('b-go'); frames(2);
+const careerDebit = H.G.careerRun.operatingCost + H.G.careerRun.premium;
+check(H.G.mode === 'fly' && H.save.career.cash === cashBeforeCareer - careerDebit, 'contract launch charges operations and selected insurance');
+H.ctrl = s => win.Sim.autopilot(s);
+let careerFrames = 0; while (H.G.mode === 'fly' && careerFrames++ < 60 * 100) frames(1);
+frames(60 * 2); H.ctrl = null;
+check(visible('result') && H.save.career.contracts['1'] && H.save.career.contracts['1'].done, 'successful career landing pays and records the contract');
+check(H.save.ghosts['career:1'] && H.save.ghosts['career:1'].version === 2, 'career best run is saved as a versioned ghost');
+fire('r-career'); frames(3);
+check(/data-contract="2"/.test(careerCard.innerHTML) && !/<button class="contract offer" data-contract="1"/.test(careerCard.innerHTML), 'cleared offer advances the branch board');
+const gearOffer = careerCard.querySelectorAll('[data-upgrade]').find(b => b.dataset.upgrade === 'gear');
+const fundsBeforeGear = H.save.career.cash;
+check(!!gearOffer && H.buyUpgrade('gear') && H.save.career.upgrades.gear === 1, 'landing gear purchase persists from earned cash ($' + fundsBeforeGear + ' before purchase)');
+H.save.career.cash = 0; H.buildCareer();
+const recoveryOffer = careerCard.querySelectorAll('[data-contract]').find(b => b.dataset.contract === '46');
+recoveryOffer._l.click.forEach(f => f({})); frames(2);
+check(H.G.careerRun.recovery && /Operating cost<\/dt><dd>\$0 at launch/.test(byId('b-contract').innerHTML), 'standby recovery contract is available at zero cash');
+fire('b-go'); frames(2);
+check(H.G.mode === 'fly' && H.save.career.cash === 0, 'recovery launch does not require funds');
+H.ctrl = s => win.Sim.autopilot(s);
+let rescueFrames = 0; while (H.G.mode === 'fly' && rescueFrames++ < 60 * 100) frames(1);
+frames(60 * 2); H.ctrl = null;
+check(visible('result') && H.save.career.cash > 0, 'recovery landing restores a positive balance');
 console.log('all checks passed; draw calls:', drawCalls);
 process.exit(0);

@@ -1,6 +1,6 @@
 # Hoverslam
 
-Land a rocket booster on a drone ship. Twenty-five missions span the Atlantic, the Moon, Mars and a night storm. Career contracts pay for upgrades; daily seeded flights, replays and best-run ghosts add reasons to come back. Plays on phones (touch buttons) and desktops (keyboard).
+Land a booster on a drone ship, qualify the lunar HLS lander, then bring Starship through a Martian belly-flop and powered landing. Hoverslam has 45 authored scenarios across Earth, Moon and Mars, plus a branching contract career, fixed-loadout daily challenge, replays and best-run ghosts. Plays in a browser on phones and desktops.
 
 ## How to play
 
@@ -9,6 +9,7 @@ Land a rocket booster on a drone ship. Twenty-five missions span the Atlantic, t
 - Let it fall, then light the engine late. The cue at the top goes COAST, GET READY, BURN NOW.
 - Touch down upright and slower than the mission limit (shown on the HUD next to each reading). A little over the limit is a rough landing: it still counts, with fewer points.
 - Three stars per mission: land on the ship, touch down inside the orange ring, finish with enough fuel left.
+- On Mars, hold Starship broadside through atmospheric entry to shed speed. Rotate upright when the flip-window marker appears, then complete the powered landing before the low-altitude deadline.
 - `Esc` pauses, `R` retries.
 
 ## The missions
@@ -31,11 +32,23 @@ Missions 1 to 8 teach the basics (wind, swell, a moving ship, a smaller pad). Fr
 | 20 | Evasive | The ship weaves left and right |
 | 21 | Blackout | Readouts and guidance drop out near the end |
 | 22 | Hoverslam | Tumbling start, fleeing ship, weak engine that can cut out, gale, tiny pad |
-| 23 | Mare Tranquillitatis | Lunar gravity and a dedicated moon pad |
-| 24 | Red Horizon | Martian gravity and an Ares landing pad |
+| 23 | Mare Tranquillitatis | HLS landing in lunar gravity |
+| 24 | Red Horizon | First playable Starship belly-flop entry and Mars landing |
 | 25 | Black Squall | Night storm with rain, wind shear and a rolling deck |
+| 26–35 | Lunar HLS programme | South Pole Shadow, HLS Hover Test, Rille Crossing, Regolith Freight, Farside Relay, Dustless Night, Crater Rim, Cold Restart, Cargo Beacon and HLS Certification |
+| 36–45 | Mars Starship programme | Ares Lowlands, Valles Approach, Olympus Cargo, Night-side Flip, Crosswind Aerobrake, Engine Relight, Dust Front, Narrow Survey Pad, Phobos Window and Starship Certification |
 
-The star goals on later missions are tight: the fuel goal is close to what the built-in autopilot manages, and the ring gets smaller.
+The lunar scenarios use 1.62 m/s² gravity and an HLS lander; Mars uses 3.71 m/s², an atmospheric entry model, and Starship. Earth remains at 9.81 m/s². The worlds have their own landing surfaces, pads, vehicle silhouettes, fuel budgets and handling.
+
+## Career programme
+
+The career board shows up to three uncompleted authored jobs at a time. Choosing a job affects its risk, gross payment, operating cost and reputation. Chapter gates connect Atlantic recovery, lunar HLS qualification and Mars Starship operations; a job remains on the board until completed, and the certification flight at the end of each programme requires a clean ring landing with fuel remaining.
+
+Briefings list expected reward, launch operating cost, optional objective, capped repair exposure and insurance coverage. Landing quality and objectives affect the payment. Repeated jobs pay less. Engine, tank, steering and landing-gear upgrades have tradeoffs and carry between contracts. A free, low-risk recovery ferry stays available if the balance reaches zero. The campaign is paced toward an 8–12 hour first completion; that target still needs a full human playthrough and tuning.
+
+## Daily flights and replays
+
+The daily seed is shared by UTC date and uses a standard vehicle, independent of career upgrades. The existing `/api/daily` Node endpoint replays submitted controls before posting a score. On static hosting, the daily board falls back to device-local scores. Replays are versioned; current exports use V2, and existing V1 `.hvr` files remain importable. Career jobs and planetary flights can save best-run ghosts too.
 
 ## Deploy
 

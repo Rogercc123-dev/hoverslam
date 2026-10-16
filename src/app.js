@@ -35,8 +35,8 @@
 
   // ------------------------------------------------------------------ progress
   var KEY = 'hoverslam.v1';
-  var REV = 3;
-  var save = { rev: REV, levels: {}, endless: {}, ghosts: {}, career: { cash: 850, contracts: {}, upgrades: { engine: 0, tank: 0, steering: 0 } }, daily: { name: 'PILOT', scores: {}, ghosts: {} }, settings: { sound: true, stability: true, guidance: true, haptics: true } };
+  var REV = 4;
+  var save = { rev: REV, levels: {}, endless: {}, ghosts: {}, career: { cash: 850, contracts: {}, upgrades: { engine: 0, tank: 0, steering: 0, gear: 0 }, reputation: 0, lastContract: 0, chapterBonuses: {} }, daily: { name: 'PILOT', scores: {}, ghosts: {} }, settings: { sound: true, stability: true, guidance: true, haptics: true } };
   try {
     var raw = localStorage.getItem(KEY);
     if (raw) {
@@ -48,18 +48,22 @@
         if (j.career && typeof j.career === 'object') {
           if (Number.isFinite(j.career.cash)) save.career.cash = Math.max(0, j.career.cash);
           if (j.career.contracts && typeof j.career.contracts === 'object') save.career.contracts = j.career.contracts;
-          if (j.career.upgrades && typeof j.career.upgrades === 'object') ['engine', 'tank', 'steering'].forEach(function (k) { save.career.upgrades[k] = clamp(j.career.upgrades[k] | 0, 0, 3); });
+          if (j.career.upgrades && typeof j.career.upgrades === 'object') ['engine', 'tank', 'steering', 'gear'].forEach(function (k) { save.career.upgrades[k] = clamp(j.career.upgrades[k] | 0, 0, 3); });
+          if (Number.isFinite(j.career.reputation)) save.career.reputation = Math.max(0, j.career.reputation);
+          if (Number.isInteger(j.career.lastContract)) save.career.lastContract = j.career.lastContract;
+          if (j.career.chapterBonuses && typeof j.career.chapterBonuses === 'object') save.career.chapterBonuses = j.career.chapterBonuses;
+          [22, 35, 45].forEach(function (id) { if (save.career.contracts[id] && save.career.contracts[id].done && save.career.contracts[id].certified === undefined) save.career.contracts[id].certified = true; });
         }
         if (j.daily && typeof j.daily === 'object') {
           if (typeof j.daily.name === 'string') save.daily.name = j.daily.name.slice(0, 16);
           if (j.daily.scores && typeof j.daily.scores === 'object') save.daily.scores = j.daily.scores;
           if (j.daily.ghosts && typeof j.daily.ghosts === 'object') save.daily.ghosts = j.daily.ghosts;
         }
-        if ((j.rev | 0) < 2) for (var lid in save.levels) if (+lid >= 10) delete save.levels[lid];
         if (j.settings && typeof j.settings === 'object') for (var k in save.settings) if (typeof j.settings[k] === 'boolean') save.settings[k] = j.settings[k];
       }
     }
   } catch (e) {}
+  save.rev = REV;
   function persist() { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) {} }
   function lvSave(id) { return save.levels[id] || { done: false, ring: false, fuel: false, best: 0 }; }
   function starsOf(sv) { return sv.done ? 1 + (sv.ring ? 1 : 0) + (sv.fuel ? 1 : 0) : 0; }
@@ -376,6 +380,8 @@
         fxFlip(s);
         if (G.endless) { G.endless.score += 100; G.endless.flips++; }
       }
+      else if (e === 'entry-flip-window') { Snd.alarm(); buzz(45); }
+      else if (e === 'entry-upright') { Snd.chime(); buzz(25); }
       else if (e === 'crash') fxCrash(s);
       else if (e === 'splash') fxSplash(s);
       else if (e === 'fault') fxFault(s);
@@ -549,6 +555,10 @@
     if (lv.terrain) {
       var mars = lv.terrain === 'mars', steel = mars ? '#51413d' : '#424b53', deckFill = mars ? '#b96643' : '#aeb5b7';
       // A fixed surface platform with legs anchored into the regolith, rather than an ocean ship.
+      if (!mars) {
+        ctx.fillStyle = 'rgba(193,195,187,.18)'; ctx.beginPath(); ctx.ellipse(0, 1.2, W2 * 1.32, 4.6, 0, 0, TAU); ctx.fill();
+        ctx.strokeStyle = 'rgba(232,230,211,.38)'; ctx.lineWidth = 0.55; ctx.beginPath(); ctx.ellipse(0, 1, W2 * 0.72, 2.7, 0, 0, TAU); ctx.stroke();
+      }
       [-W2 + 7, W2 - 7].forEach(function (x) {
         ctx.strokeStyle = steel; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, -0.8); ctx.lineTo(x * 0.78, -5.3); ctx.stroke();
         ctx.fillStyle = mars ? '#e29463' : '#d2d5d2'; ctx.fillRect(x * 0.78 - 2.4, -5.6, 4.8, 0.6);
@@ -559,6 +569,13 @@
       ctx.fillStyle = '#f5f2df'; ctx.fillRect(-W2, -0.2, W2 * 2, 0.2);
       ctx.fillStyle = mars ? '#50312c' : '#52585a'; ctx.fillRect(-W2 * 0.44, 0.2, W2 * 0.88, 2.8);
       ctx.fillStyle = mars ? '#e18254' : '#d8d9d5'; ctx.fillRect(-W2 * 0.44, 2.35, W2 * 0.88, 0.45);
+      if (!mars) {
+        ctx.strokeStyle = 'rgba(238,234,217,.72)'; ctx.lineWidth = 0.45; ctx.beginPath(); ctx.ellipse(0, -0.48, lv.ring * 0.72, 1.25, 0, 0, TAU); ctx.stroke();
+        ctx.fillStyle = '#ffb25e'; ctx.fillRect(-W2 * 0.38, 0.18, 1.1, 0.48); ctx.fillRect(W2 * 0.38 - 1.1, 0.18, 1.1, 0.48);
+      } else {
+        ctx.fillStyle = '#d9b27e'; ctx.fillRect(-W2 * 0.32, 1.05, 2.3, 0.55); ctx.fillRect(W2 * 0.32 - 2.3, 1.05, 2.3, 0.55);
+        ctx.strokeStyle = 'rgba(42,34,32,.72)'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(-W2 * 0.28, 2.8); ctx.lineTo(-W2 * 0.22, 6.2); ctx.moveTo(W2 * 0.28, 2.8); ctx.lineTo(W2 * 0.22, 6.2); ctx.stroke();
+      }
       ctx.save(); ctx.translate(0, 0.8); ctx.scale(1, -1); ctx.font = '800 2.8px "Big Shoulders Display", Impact, sans-serif'; ctx.fillStyle = 'rgba(245,241,226,.95)'; ctx.textAlign = 'center'; ctx.fillText(lv.padName || 'PAD', 0, 0); ctx.restore();
       [-W2 + 3, W2 - 3].forEach(function (x, i) { ctx.fillStyle = i ? '#ffb25e' : '#7ff4d2'; ctx.fillRect(x - 0.35, 0, 0.7, 0.6); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = i ? 'rgba(255,155,65,.45)' : 'rgba(88,224,162,.4)'; ctx.beginPath(); ctx.arc(x, 0.4, 2.2, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; });
       ctx.restore(); return;
@@ -600,6 +617,51 @@
     ctx.restore();
   }
 
+  function drawHlsVehicle(s) {
+    var dep = s.status === 'landed' ? 1 : s.legs, lg = Sim.legGeom(dep), i;
+    ctx.lineCap = 'round';
+    // HLS descent stage: open truss legs and separated propellant tanks.
+    [-1, 1].forEach(function (sg) {
+      ctx.strokeStyle = '#353c42'; ctx.lineWidth = 0.85; ctx.beginPath(); ctx.moveTo(sg * 1.7, -5); ctx.lineTo(sg * (lg.span + 1.1), lg.fy + 0.3); ctx.stroke();
+      ctx.strokeStyle = '#9a9a91'; ctx.lineWidth = 0.24; ctx.beginPath(); ctx.moveTo(sg * 1.7, -5); ctx.lineTo(sg * (lg.span + 1.1), lg.fy + 0.3); ctx.stroke();
+      ctx.strokeStyle = '#41484b'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(sg * 1.35, -11); ctx.lineTo(sg * 3.9, -18); ctx.stroke();
+      ctx.fillStyle = '#262b2f'; ctx.fillRect(sg * (lg.span + 1.1) - 1.2, lg.fy, 2.4, 0.6);
+      ctx.fillStyle = '#c8c7bd'; ctx.fillRect(sg * 3.8 - 0.65, -13.2, 1.3, 8.6);
+      ctx.fillStyle = '#e8e3d7'; ctx.fillRect(sg * 3.8 - 0.4, -12.4, 0.4, 7.2);
+    });
+    ctx.fillStyle = '#52585a'; ctx.fillRect(-4.2, -15.8, 8.4, 2.7);
+    ctx.fillStyle = '#777b76'; ctx.fillRect(-3.4, -13.6, 6.8, 1.1);
+    ctx.fillStyle = '#777e83'; ctx.fillRect(-2.2, -12.8, 4.4, 24.8);
+    ctx.fillStyle = '#d2d3cc'; ctx.fillRect(-1.4, -11.9, 2.8, 22.8);
+    // Habitat / crew cabin with a small dark viewport.
+    ctx.beginPath(); ctx.moveTo(-2.3, 11.4); ctx.lineTo(-2.2, 15.4); ctx.quadraticCurveTo(-2, 19.6, 0, 20.8); ctx.quadraticCurveTo(2, 19.6, 2.2, 15.4); ctx.lineTo(2.3, 11.4); ctx.closePath();
+    ctx.fillStyle = '#e3e1d8'; ctx.fill(); ctx.strokeStyle = '#737977'; ctx.lineWidth = 0.32; ctx.stroke();
+    ctx.fillStyle = '#263a46'; ctx.beginPath(); ctx.ellipse(0, 16.2, 1.1, 1.5, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#555d61'; ctx.lineWidth = 0.35; ctx.beginPath(); ctx.moveTo(-3.4, 10.7); ctx.lineTo(3.4, 10.7); ctx.stroke();
+    ctx.fillStyle = '#ff7a35'; ctx.fillRect(-2.2, 8.8, 4.4, 0.65);
+    ctx.fillStyle = '#30373b'; ctx.fillRect(-2.3, -8.1, 4.6, 0.45); ctx.fillRect(-2.3, 3.8, 4.6, 0.45);
+    ctx.fillStyle = 'rgba(255,255,255,.48)'; ctx.fillRect(-0.75, -11.2, 0.28, 18.5);
+  }
+  function drawStarshipVehicle(s) {
+    var dep = s.status === 'landed' ? 1 : s.legs, lg = Sim.legGeom(dep);
+    ctx.lineCap = 'round';
+    // Wide aft flaps and body taper are deliberately distinct from the booster.
+    ctx.fillStyle = '#5b6061'; ctx.beginPath(); ctx.moveTo(-2.2, 11); ctx.lineTo(-6.5, 13.8); ctx.lineTo(-5.4, 7.6); ctx.lineTo(-2.4, 5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(2.2, 11); ctx.lineTo(6.5, 13.8); ctx.lineTo(5.4, 7.6); ctx.lineTo(2.4, 5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#c8ccd0'; ctx.beginPath(); ctx.moveTo(-2.8, -15.8); ctx.lineTo(-3.9, -10); ctx.lineTo(-3.5, 12); ctx.quadraticCurveTo(-3.1, 17.4, 0, 22.5); ctx.quadraticCurveTo(3.1, 17.4, 3.5, 12); ctx.lineTo(3.9, -10); ctx.lineTo(2.8, -15.8); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#70777b'; ctx.lineWidth = 0.38; ctx.stroke();
+    ctx.fillStyle = '#303538'; ctx.beginPath(); ctx.moveTo(0.7, -15.6); ctx.lineTo(2.7, -15.6); ctx.lineTo(3.25, 10); ctx.quadraticCurveTo(3, 16, 0.7, 20.4); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#f1f0e9'; ctx.fillRect(-3.25, -4.6, 6.5, 0.52);
+    ctx.fillStyle = '#ff7a35'; ctx.fillRect(-3.2, 2.6, 6.4, 0.6);
+    ctx.fillStyle = 'rgba(255,255,255,.52)'; ctx.fillRect(-2.45, -13.5, 0.35, 17.5);
+    // Compact four-point landing gear, moving from folded to deployed with the flight.
+    [-1, 1].forEach(function (sg) {
+      var x = sg * (2.65 + (lg.span - 2.4) * 0.48), y = -14 + (lg.fy + 15.6) * 0.45;
+      ctx.strokeStyle = '#303538'; ctx.lineWidth = 0.55; ctx.beginPath(); ctx.moveTo(sg * 2.5, -10); ctx.lineTo(x, y); ctx.stroke();
+      ctx.fillStyle = '#282d30'; ctx.fillRect(x - 0.9, y, 1.8, 0.5);
+    });
+  }
+
   function drawRocket(s) {
     var z = G.camZ, k = Math.max(1, 46 / (34 * z)), thr = s.throttle, i;
     ctx.save(); ctx.translate(sx(s.x), sy(s.y)); ctx.rotate(-s.th); ctx.scale(z * k, -z * k);
@@ -618,6 +680,10 @@
       }
       if (thr > 0.45) { ctx.fillStyle = 'rgba(255,235,190,0.7)'; for (i = 1; i <= 3; i++) { ctx.beginPath(); ctx.ellipse(0, ny - fl * (0.18 + i * 0.17), 0.55, 0.34, 0, 0, TAU); ctx.fill(); } }
       ctx.globalCompositeOperation = 'source-over';
+    }
+    if (s.level.vehicle === 'hls' || s.level.vehicle === 'starship') {
+      if (s.level.vehicle === 'hls') drawHlsVehicle(s); else drawStarshipVehicle(s);
+      ctx.restore(); return;
     }
     // legs
     var dep = s.status === 'landed' ? 1 : s.legs, lg = Sim.legGeom(dep), comp = s.land ? s.land.comp : 0;
@@ -719,6 +785,12 @@
     if (G.ghostSim && (G.ghostSim.status === 'flying' || G.ghostSim.status === 'landed')) {
       ctx.save(); ctx.globalAlpha = 0.32; ctx.globalCompositeOperation = 'screen'; drawRocket(G.ghostSim); ctx.restore();
     }
+    if (s.level.atmosphericEntry && s.entryPhase !== 'powered' && s.entryLoad > 0.08) {
+      var hx = sx(s.x), hy = sy(s.y), hr = (18 + 30 * s.entryLoad) * Math.max(G.camZ, 0.5);
+      var heat = ctx.createRadialGradient(hx, hy, hr * 0.12, hx, hy, hr);
+      heat.addColorStop(0, 'rgba(255,180,105,' + (0.12 * s.entryLoad) + ')'); heat.addColorStop(1, 'rgba(255,112,67,0)');
+      ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = heat; ctx.fillRect(hx - hr, hy - hr, hr * 2, hr * 2); ctx.globalCompositeOperation = 'source-over';
+    }
     if (s.status === 'flying' || s.status === 'landed') drawRocket(s);
     drawParts();
     drawGuidance(s);
@@ -739,7 +811,7 @@
 
   // ------------------------------------------------------------------ HUD
   var el = {};
-  ['v-alt', 'v-vs', 'v-hs', 'v-tilt', 't-vs', 't-hs', 't-tilt', 'v-wind', 'wind-arrow', 'v-fuel', 'fuel-fill', 'fuel-goal', 'fuel', 'cue', 'hint', 'hint-tx'].forEach(function (id) { el[id] = document.getElementById(id); });
+  ['v-alt', 'v-vs', 'v-hs', 'v-tilt', 't-vs', 't-hs', 't-tilt', 'v-wind', 'wind-arrow', 'v-fuel', 'fuel-fill', 'fuel-goal', 'fuel', 'cue', 'hint', 'hint-tx', 'entry-hud', 'entry-state', 'entry-load'].forEach(function (id) { el[id] = document.getElementById(id); });
   function setTx(node, v) { if (node._t !== v) { node.textContent = v; node._t = v; } }
   function cls(ratio) { return ratio <= 1 ? 'ok' : ratio <= 1.35 ? 'warn' : 'bad'; }
   function updateHud(dt) {
@@ -758,7 +830,7 @@
     var fl = kt < 0 ? 'scaleX(-1)' : 'none'; if (el['wind-arrow']._f !== fl) { el['wind-arrow'].style.transform = fl; el['wind-arrow']._f = fl; }
     el['wind-arrow'].style.opacity = Math.abs(kt) < 1 ? 0.3 : 1;
     setTx(el['v-fuel'], Math.round(T.fuel * 100) + '%');
-    el['fuel-fill'].style.width = (T.fuel * 100).toFixed(1) + '%';
+    el['fuel-fill'].style.width = clamp(T.fuel * 100, 0, 100).toFixed(1) + '%';
     el['fuel'].classList.toggle('low', T.fuel < 0.12 && T.fuel > 0);
     // cue
     var cue = el['cue'];
@@ -772,6 +844,12 @@
       if (s.throttle > 0.4) { st = 3; tx = 'BURNING'; } else if (q === 2) tx = 'BURN NOW'; else if (q === 1) tx = 'GET READY'; else tx = 'COAST';
       setTx(cue, tx); if (cue.dataset.s !== String(st)) cue.dataset.s = String(st);
     } else cue.hidden = true;
+    el['entry-hud'].hidden = !(lv.atmosphericEntry && s.status === 'flying');
+    if (lv.atmosphericEntry && s.status === 'flying') {
+      var entryLabel = s.entryPhase === 'bellyflop' ? 'BELLY-FLOP · BLEED SPEED' : s.entryPhase === 'flip-window' ? 'FLIP UPRIGHT NOW' : 'POWERED DESCENT';
+      setTx(el['entry-state'], entryLabel); setTx(el['entry-load'], 'DRAG ' + Math.round((s.entryLoad || 0) * 100) + '%');
+      if (el['entry-hud'].dataset.state !== s.entryPhase) el['entry-hud'].dataset.state = s.entryPhase;
+    }
     // hint
     var showHint = G.cur <= 2 && !G.hintGone && G.mode === 'fly' && !G.paused;
     if (showHint) {
@@ -859,41 +937,79 @@
   }
 
   function fmt(n, d) { return n.toFixed(d === undefined ? 0 : d); }
+  var CHAPTERS = [
+    { key: 'earth', title: 'Atlantic recovery', world: 'earth', eyebrow: 'CHAPTER 01 · EARTH' },
+    { key: 'moon', title: 'Lunar HLS qualification', world: 'moon', eyebrow: 'CHAPTER 02 · MOON' },
+    { key: 'mars', title: 'Mars Starship operations', world: 'mars', eyebrow: 'CHAPTER 03 · MARS' }
+  ];
   var UPGRADE_INFO = {
-    engine: { title: 'Engine tune', detail: 'More thrust, slightly higher fuel burn.', cost: [430, 700, 1050] },
-    tank: { title: 'Fuel reserve', detail: 'Start each contract with more propellant.', cost: [300, 510, 820] },
-    steering: { title: 'RCS valves', detail: 'Faster attitude control in both directions.', cost: [350, 590, 900] }
+    engine: { title: 'Engine package', detail: '+8% thrust per stage; burns more fuel.', cost: [390, 650, 980] },
+    tank: { title: 'Tank extension', detail: '+7.5% reserve per stage; extra mass slows the ship.', cost: [300, 500, 760] },
+    steering: { title: 'RCS valves', detail: 'Quicker attitude control; most useful in gusts.', cost: [320, 540, 810] },
+    gear: { title: 'Landing gear', detail: 'Deploys faster and tolerates harder touchdown; adds mass.', cost: [360, 590, 880] }
   };
   function careerLevel(base) {
     var lv = {}, u = save.career.upgrades;
     Object.keys(base).forEach(function (k) { lv[k] = base[k]; });
     lv.thrust *= 1 + 0.08 * u.engine; lv.burn *= 1 + 0.025 * u.engine;
-    lv.fuel = Math.min(0.98, lv.fuel + 0.075 * u.tank);
+    lv.fuel = Math.min(1.5, lv.fuel + 0.075 * u.tank); lv.thrust *= 1 - 0.018 * u.gear; lv.burn *= 1 + 0.012 * u.gear;
     lv.rcsL = Math.min(1.5, lv.rcsL * (1 + 0.13 * u.steering)); lv.rcsR = Math.min(1.5, lv.rcsR * (1 + 0.13 * u.steering));
+    lv.legTime = Sim.LEG_TIME * (1 - 0.13 * u.gear); lv.vMax += 0.28 * u.gear; lv.wMax += 0.04 * u.gear;
     return lv;
   }
-  function careerUnlocked(id) { return id === 1 || !!(save.career.contracts[id - 1] && save.career.contracts[id - 1].done); }
+  function careerChapterIndex(lv) { return lv.world === 'moon' ? 1 : lv.world === 'mars' ? 2 : 0; }
+  function careerDone(lv) { var rec = save.career.contracts[lv.id]; return !!(rec && rec.done && (!lv.certification || rec.certified)); }
+  function activeCareerChapter() {
+    for (var c = 0; c < CHAPTERS.length; c++) {
+      var jobs = LV.filter(function (lv) { return careerChapterIndex(lv) === c; });
+      if (jobs.some(function (lv) { return !careerDone(lv); })) return c;
+    }
+    return CHAPTERS.length - 1;
+  }
+  function chapterProgress(c) {
+    var jobs = LV.filter(function (lv) { return careerChapterIndex(lv) === c; });
+    return { done: jobs.filter(careerDone).length, total: jobs.length };
+  }
+  function recoveryLevel() {
+    var lv = {};
+    Object.keys(LV[0]).forEach(function (k) { lv[k] = LV[0][k]; });
+    lv.id = 46; lv.name = 'Recovery ferry'; lv.blurb = 'A low-risk ferry run keeps the programme moving when funds are tight.';
+    lv.alt = 500; lv.dx = [35, 75]; lv.vx = 2; lv.vy = -24; lv.deck = 130; lv.fuel = 1.05; lv.fuelGoal = 0.25; lv.vMax = 12; lv.hMax = 8; lv.aMax = 0.42; lv.ring = 16; lv.hazard = '';
+    lv.contract = { baseReward: 200, operatingCost: 0, repairCap: 0, insurancePremium: 0, insuranceCoverage: 1, reputation: 0, objectiveBonus: 35, risk: 0, optionalObjective: 'Land inside the recovery ring' };
+    return lv;
+  }
+  function careerBase(id) { return id === 46 ? recoveryLevel() : LV[id - 1]; }
+  function jobTerms(lv) { return lv.contract || { baseReward: 250, operatingCost: 60, repairCap: 180, insurancePremium: 45, insuranceCoverage: 0.7, reputation: 1, objectiveBonus: 80, risk: 1 }; }
+  function purchaseCareerUpgrade(key) {
+    var info = UPGRADE_INFO[key], level = save.career.upgrades[key];
+    if (!info || level >= info.cost.length || save.career.cash < info.cost[level]) return false;
+    save.career.cash -= info.cost[level]; save.career.upgrades[key]++; persist(); Snd.chime();
+    if (G.mode === 'career') buildCareer();
+    return true;
+  }
   function buildCareer() {
-    var card = $('#career-card'), contracts = '', upgrades = '', counts = 0;
-    LV.forEach(function (lv) {
-      var rec = save.career.contracts[lv.id], open = careerUnlocked(lv.id), done = !!(rec && rec.done);
-      if (done) counts++;
-      contracts += '<button class="contract" data-contract="' + lv.id + '"' + (open ? '' : ' disabled') + '><span class="contract-no">' + String(lv.id).padStart(2, '0') + '</span><span class="contract-copy"><b>' + lv.name + '</b><small>' + (done ? 'Best ' + (rec.best || 0).toLocaleString() + ' · fly again for reduced pay' : 'Reward on successful landing') + '</small></span><span class="contract-state">' + (done ? 'CLEARED' : open ? 'OPEN' : 'LOCKED') + '</span></button>';
+    var card = $('#career-card'), contracts = '', upgrades = '', c = activeCareerChapter(), chapter = CHAPTERS[c], prog = chapterProgress(c), totalDone = LV.filter(careerDone).length;
+    var offers = LV.filter(function (lv) { return careerChapterIndex(lv) === c && !careerDone(lv); }).slice(0, 3);
+    offers.forEach(function (lv, i) {
+      var t = jobTerms(lv), riskName = t.risk >= 3 ? 'HIGH RISK' : t.risk === 2 ? 'ELEVATED' : 'STANDARD';
+      contracts += '<button class="contract offer" data-contract="' + lv.id + '"><span class="contract-no">' + String(lv.id).padStart(2, '0') + '</span><span class="contract-copy"><b>' + lv.name + (lv.certification ? ' · Certification' : '') + '</b><small>' + riskName + ' · $' + t.baseReward + ' gross · $' + t.operatingCost + ' ops · REP +' + t.reputation + '</small></span><span class="contract-state">' + (i === 0 ? 'RECOMMENDED' : 'OFFER') + '</span></button>';
     });
-    ['engine', 'tank', 'steering'].forEach(function (key) {
+    if (!offers.length) contracts = '<p class="daily-status">Programme complete. Replay a clear contract for reduced pay, or fly the recovery ferry.</p>';
+    var last = save.career.lastContract, replay = last && last !== 46 && careerDone(careerBase(last)) ? careerBase(last) : null;
+    ['engine', 'tank', 'steering', 'gear'].forEach(function (key) {
       var info = UPGRADE_INFO[key], level = save.career.upgrades[key], maxed = level >= 3, price = maxed ? 0 : info.cost[level];
       upgrades += '<button class="upgrade" data-upgrade="' + key + '"' + (maxed || save.career.cash < price ? ' disabled' : '') + '><span class="contract-copy"><b>' + info.title + ' · ' + level + '/3</b><small>' + info.detail + '</small></span><span class="contract-state">' + (maxed ? 'MAX' : '$' + price) + '</span></button>';
     });
-    card.innerHTML = '<div class="bar"><h2>Career contracts</h2><div class="career-cash">$' + save.career.cash.toLocaleString() + '<small>AVAILABLE FUNDS</small></div></div>' +
-      '<p>Take recovery contracts, earn more for clean landings, and tune the booster between flights. Cleared contracts stay open, with a smaller repeat fee.</p>' +
-      '<div class="career-layout"><div class="career-list"><h3>Contracts · ' + counts + ' / ' + LV.length + ' cleared</h3>' + contracts + '</div><div class="upgrade-list"><h3>Booster upgrades</h3>' + upgrades + '<p class="daily-status">Engine trades a little efficiency for thrust. Fuel and steering upgrades carry into every contract.</p></div></div>' +
+    var notice = G.careerNotice ? '<p class="tip">' + G.careerNotice + '</p>' : ''; G.careerNotice = '';
+    card.innerHTML = notice + '<div class="bar"><div><p class="eyebrow">' + chapter.eyebrow + '</p><h2>' + chapter.title + '</h2></div><div class="career-cash">$' + save.career.cash.toLocaleString() + '<small>AVAILABLE · REP ' + Math.floor(save.career.reputation || 0) + '</small></div></div>' +
+      '<p>Choose from the next three board offers. All authored jobs remain available until cleared; chapter qualification advances when the whole programme is complete. A recovery ferry is always on standby.</p>' +
+      '<div class="career-progress"><span>' + prog.done + ' / ' + prog.total + ' contracts certified in this chapter</span><i><b style="width:' + (100 * prog.done / prog.total).toFixed(0) + '%"></b></i><span>Campaign: ' + totalDone + ' / 45 · 8–12 hour completion target</span></div>' +
+      '<div class="career-layout"><div class="career-list"><h3>Available contracts</h3>' + contracts +
+        (replay ? '<button class="contract repeat" data-contract="' + replay.id + '"><span class="contract-no">↻</span><span class="contract-copy"><b>Re-fly · ' + replay.name + '</b><small>Reduced repeat pay · no career progress</small></span><span class="contract-state">REPEAT</span></button>' : '') +
+        '<button class="contract recovery" data-contract="46"><span class="contract-no">S</span><span class="contract-copy"><b>Recovery ferry · always available</b><small>No operating cost · small repeat payment · safe touchdown limits</small></span><span class="contract-state">SAFE</span></button></div><div class="upgrade-list"><h3>Vehicle programme</h3>' + upgrades + '<p class="daily-status">Engine, tank, steering and gear kits persist across contracts. The daily challenge uses a stock vehicle.</p></div></div>' +
       '<button class="btn ghost" id="career-back">Back to hangar</button>';
-    Array.prototype.forEach.call(card.querySelectorAll('[data-contract]'), function (b) { b.addEventListener('click', function () { Snd.click(); openBrief(+b.dataset.contract, 'career'); }); });
-    Array.prototype.forEach.call(card.querySelectorAll('[data-upgrade]'), function (b) { b.addEventListener('click', function () {
-      var key = b.dataset.upgrade, level = save.career.upgrades[key], price = UPGRADE_INFO[key].cost[level];
-      if (level >= 3 || save.career.cash < price) return;
-      save.career.cash -= price; save.career.upgrades[key]++; persist(); Snd.chime(); buildCareer();
-    }); });
+    Array.prototype.forEach.call(card.querySelectorAll ? card.querySelectorAll('[data-contract]') : [], function (b) { b.addEventListener('click', function () { Snd.click(); openBrief(+b.dataset.contract, 'career'); }); });
+    Array.prototype.forEach.call(card.querySelectorAll('[data-upgrade]'), function (b) { b.addEventListener('click', function () { purchaseCareerUpgrade(b.dataset.upgrade); }); });
     $('#career-back').addEventListener('click', openMenu);
   }
   function openCareer() { G.endless = null; G.careerRun = null; G.dailyRun = null; G.mode = 'career'; startAttract(); buildCareer(); setScreen('career'); }
@@ -935,17 +1051,28 @@
   }
   function openBrief(id, type) {
     G.endless = null;
-    G.dailyRun = null; G.runType = type || 'mission'; G.careerRun = type === 'career' ? { id: id } : null;
-    var lv = type === 'career' ? careerLevel(LV[id - 1]) : LV[id - 1], sv = lvSave(id);
+    G.dailyRun = null; G.runType = type || 'mission';
+    var base = type === 'career' ? careerBase(id) : LV[id - 1];
+    var priorCareerRecord = type === 'career' ? save.career.contracts[id] : null;
+    G.careerRun = type === 'career' ? { id: id, recovery: id === 46, repeat: id !== 46 && !!(priorCareerRecord && priorCareerRecord.attempts), insured: false } : null;
+    var lv = type === 'career' ? careerLevel(base) : base, sv = id <= LV.length ? lvSave(id) : { done: false, ring: false, fuel: false, best: 0 };
     G.cur = id; G.seed = (Math.random() * 1e9) | 0;
     newRound(lv, G.seed, false);
     G.attract = false; G.frozen = true; G.mode = 'brief'; G.paused = false; G.resultShown = false;
-    $('#b-eye').textContent = type === 'career' ? 'Career contract · payment on touchdown' : 'Mission ' + id + ' of ' + LV.length;
+    $('#b-eye').textContent = type === 'career' ? (id === 46 ? 'Standby work · always available' : 'Career offer · ' + CHAPTERS[careerChapterIndex(base)].title) : 'Mission ' + id + ' of ' + LV.length;
     $('#b-name').textContent = lv.name;
     $('#b-blurb').textContent = lv.blurb;
     var windTx = lv.wind || lv.gust ? Math.round(lv.wind * 10) + (lv.gust ? '–' + Math.round((lv.wind + lv.gust) * 10) : '') + ' kt' : 'Calm';
-    var rows = [['Deck', fmt(lv.deck) + ' m'], ['Gravity', fmt(lv.gravity || Sim.G, 2) + ' m/s²'], ['Swell', fmt(lv.swell, 1) + ' m'], ['Wind', windTx], ['Ship', lv.zig ? 'Weaving' : lv.away ? 'Fleeing' : lv.shipV ? fmt(lv.shipV * 1.94) + ' kt' : 'Holding'], ['Fuel', fmt(lv.fuel * 100) + '%' + (lv.leak ? ' leaking' : '')], [lv.thrust < 1 ? 'Engine' : 'Start', lv.thrust < 1 ? fmt(lv.thrust * 100) + '%' : fmt(lv.alt) + ' m']];
+    var rows = [['Vehicle', lv.vehicle === 'hls' ? 'Starship HLS' : lv.vehicle === 'starship' ? 'Starship' : 'Recovery booster'], ['World', lv.world === 'moon' ? 'Moon · 1.62 m/s²' : lv.world === 'mars' ? 'Mars · 3.71 m/s²' : 'Earth · 9.81 m/s²'], ['Pad', lv.padName || 'Tidewake'], ['Gravity', fmt(lv.gravity || Sim.G, 2) + ' m/s²'], ['Wind', windTx], ['Start', fmt(lv.alt) + ' m'], ['Fuel', fmt(lv.fuel * 100) + '%' + (lv.leak ? ' leaking' : '')], ['Engine', fmt(lv.thrust * 100) + '%']];
+    if (lv.atmosphericEntry) rows.push(['Entry', 'Belly-flop · ' + lv.entryFlipStart + '–' + lv.entryFailAlt + ' m window']);
     $('#b-specs').innerHTML = rows.map(function (r) { return '<div><dt>' + r[0] + '</dt><dd>' + r[1] + '</dd></div>'; }).join('');
+    var terms = $('#b-contract');
+    if (type === 'career') {
+      var t = jobTerms(lv), repeatScale = G.careerRun.repeat ? 0.22 : 1;
+      terms.hidden = false;
+      terms.innerHTML = '<h3>Contract terms</h3><dl class="specs contract-terms"><div><dt>Expected reward</dt><dd>$' + Math.round(t.baseReward * repeatScale).toLocaleString() + ' + up to $' + t.objectiveBonus.toLocaleString() + '</dd></div><div><dt>Operating cost</dt><dd>$' + t.operatingCost.toLocaleString() + ' at launch</dd></div><div><dt>Optional objective</dt><dd>' + (t.optionalObjective || 'Complete a clean landing') + '</dd></div>' + (lv.certification ? '<div><dt>Qualification</dt><dd>Clean landing inside the ring with fuel remaining</dd></div>' : '') + '<div><dt>Repair exposure</dt><dd>Up to $' + t.repairCap.toLocaleString() + '</dd></div><div><dt>Insurance</dt><dd>$' + t.insurancePremium.toLocaleString() + ' premium · covers ' + Math.round(t.insuranceCoverage * 100) + '% of repair bill</dd></div><div><dt>Risk / reputation</dt><dd>' + (t.risk >= 3 ? 'HIGH' : t.risk === 2 ? 'ELEVATED' : 'STANDARD') + ' · +' + t.reputation + ' on completion</dd></div></dl>' +
+        '<label class="insurance-choice"><input id="b-insure" type="checkbox"><span><b>Insure this flight</b><small>Premium is charged with operating cost before launch.</small></span></label><p class="daily-status" id="b-afford">Available funds: $' + save.career.cash.toLocaleString() + '</p>';
+    } else { terms.hidden = true; terms.innerHTML = ''; }
     var goals = [[true, 'Land on the ship', 'Down at ' + lv.vMax + ' m/s or less'], [sv.ring, 'Touch down inside the ring', '±' + fmt(lv.ring) + ' m'], [sv.fuel, 'Land with fuel to spare', fmt(lv.fuelGoal * 100) + '% left']];
     $('#b-goals').innerHTML = goals.map(function (g, i) { return '<li' + (i === 0 ? (sv.done ? ' class="ok"' : '') : (g[0] ? ' class="ok"' : '')) + '>' + (i === 0 ? (sv.done ? CHECK : STAR.replace('{c}', '')) : g[0] ? CHECK : STAR.replace('{c}', '')) + '<span>' + g[1] + '</span><em>' + g[2] + '</em></li>'; }).join('');
     var how = '';
@@ -955,6 +1082,8 @@
         : '<div><kbd>↑</kbd> or <kbd>Space</kbd> fire the engine. A short tap is a short burn.</div><div><kbd>←</kbd> <kbd>→</kbd> tilt the booster. Lean toward the ship, then burn to move sideways.</div>';
       how += '<div>Light the engine late. Touch down under <b>' + lv.vMax + ' m/s</b>, upright, with legs on the deck. A little too fast still counts as a rough landing.</div>';
     }
+    if (lv.vehicle === 'hls') how += '<div><b>HLS lander.</b> The lunar descent stage is tall and leggy. Low gravity means each correction carries farther; start cancelling drift early.</div>';
+    if (lv.atmosphericEntry) how = '<div class="entry-tutorial"><b>STARSHIP BELLY-FLOP ENTRY</b><span>Stay broadside in the upper atmosphere: drag sheds speed while you keep the pad in view. At <b>' + lv.entryFlipStart + ' m</b>, rotate upright and finish the flip before <b>' + lv.entryFailAlt + ' m</b>. Then use the engine for the powered landing. The marker on screen shows the phase.</span></div>' + how;
     if (lv.hazard) how = '<div class="tip"><b>Hazard.</b> ' + lv.hazard + '</div>' + how;
     $('#b-how').innerHTML = how; $('#b-how').hidden = !how;
     $('#b-go').textContent = type === 'career' ? 'Accept contract' : 'Launch';
@@ -1001,7 +1130,17 @@
 
   function launch() {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    var lv = G.endless ? G.endless.current : G.runType === 'career' ? careerLevel(LV[G.cur - 1]) : LV[G.cur - 1];
+    var lv = G.endless ? G.endless.current : G.runType === 'career' ? careerLevel(careerBase(G.cur)) : LV[G.cur - 1];
+    if (G.runType === 'career' && G.careerRun) {
+      var t = jobTerms(lv), insurance = !!(document.getElementById('b-insure') && document.getElementById('b-insure').checked);
+      var due = t.operatingCost + (insurance ? t.insurancePremium : 0);
+      if (save.career.cash < due) {
+        G.careerNotice = 'This flight needs $' + due.toLocaleString() + ' before launch. Fly the free recovery ferry to rebuild your balance.';
+        openCareer(); return;
+      }
+      save.career.cash -= due; G.careerRun.insured = insurance; G.careerRun.operatingCost = t.operatingCost; G.careerRun.premium = insurance ? t.insurancePremium : 0; G.careerRun.repairCap = t.repairCap; G.careerRun.coverage = t.insuranceCoverage;
+      persist();
+    }
     newRound(lv, G.seed, save.settings.stability);
     beginFlight(G.runType);
   }
@@ -1028,6 +1167,7 @@
   function bestGhost() {
     if (G.runType === 'daily' && G.dailyRun) return save.daily.ghosts[G.dailyRun.date];
     if (G.runType === 'mission') return save.ghosts[G.cur];
+    if (G.runType === 'career') return save.ghosts['career:' + G.cur];
     return null;
   }
   function beginFlight(type) {
@@ -1062,15 +1202,18 @@
   }
   function saveReplayRecord() {
     if (!G.runLog.length) return;
-    G.lastReplay = { version: 1, seed: G.seed, level: cloneJson(G.level), trace: cloneJson(G.runLog), assist: !!G.sim.assist,
+    G.lastReplay = { version: 2, ruleset: 2, seed: G.seed, level: cloneJson(G.level), trace: cloneJson(G.runLog), assist: !!G.sim.assist,
       kind: G.runType, date: G.dailyRun ? G.dailyRun.date : null };
   }
   function startReplay(record, returnMenu, captureClip) {
-    if (!record || record.version !== 1 || !record.level || !Array.isArray(record.level.dx) || !Array.isArray(record.trace) || record.trace.length > 50000) return false;
+    if (!record || (record.version !== 1 && record.version !== 2) || !record.level || !Array.isArray(record.level.dx) || !Array.isArray(record.trace) || record.trace.length > 50000) return false;
     var level = record.level, required = ['alt', 'vx', 'vy', 'tilt', 'deck', 'swell', 'fuel', 'burn', 'thrust', 'wind', 'gust', 'vMax', 'hMax', 'aMax', 'wMax', 'rcsL', 'rcsR', 'shipV'];
     if (!THEMES[level.sky] || !level.dx.every(Number.isFinite) || level.dx.length !== 2 || level.deck <= 0 || level.alt < 0 || level.fuel < 0 || level.fuel > 1.5) return false;
     for (var f = 0; f < required.length; f++) if (!Number.isFinite(level[required[f]]) || Math.abs(level[required[f]]) > 5000) return false;
     if (level.gravity !== undefined && (!Number.isFinite(level.gravity) || level.gravity < 0.5 || level.gravity > 20)) return false;
+    if (level.world !== undefined && ['earth', 'moon', 'mars'].indexOf(level.world) < 0) return false;
+    if (level.vehicle !== undefined && ['booster', 'hls', 'starship'].indexOf(level.vehicle) < 0) return false;
+    if (level.atmosphericEntry && (level.world !== 'mars' || level.vehicle !== 'starship' || !Number.isFinite(level.entryFlipStart) || !Number.isFinite(level.entryFailAlt))) return false;
     if (level.fault && (!Number.isFinite(level.fault.hi) || !Number.isFinite(level.fault.lo) || !Number.isFinite(level.fault.d0) || !Number.isFinite(level.fault.d1))) return false;
     if (level.blackout && (!Array.isArray(level.blackout) || level.blackout.length !== 2 || !level.blackout.every(Number.isFinite))) return false;
     var steps = 0;
@@ -1167,8 +1310,11 @@
     G.resultShown = true;
     if (!G.isReplay) saveReplayRecord();
     if (r.ok) {
-      var endless = G.endless, daily = G.runType === 'daily', career = G.runType === 'career', sv0 = endless || daily ? { best: 0 } : lvSave(lv.id), wasNext = !endless && !daily && lv.id < LV.length && !unlocked(lv.id + 1), prevBest = sv0.best;
-      if (!endless && !daily) {
+      var endless = G.endless, daily = G.runType === 'daily', career = G.runType === 'career';
+      var careerRec0 = career ? (save.career.contracts[lv.id] || { best: 0, done: false }) : null;
+      var sv0 = career ? { best: careerRec0.best || 0 } : endless || daily ? { best: 0 } : lvSave(lv.id);
+      var wasNext = !endless && !daily && !career && lv.id < LV.length && !unlocked(lv.id + 1), prevBest = sv0.best;
+      if (!endless && !daily && !(career && G.careerRun && G.careerRun.recovery)) {
         var rec = save.levels[lv.id] || (save.levels[lv.id] = { done: false, ring: false, fuel: false, best: 0 });
         rec.done = true; if (r.stars.ring) rec.ring = true; if (r.stars.fuel) rec.fuel = true; if (r.score > rec.best) rec.best = r.score; persist();
       } else {
@@ -1177,18 +1323,36 @@
           endless.verticalSum += Math.abs(r.vn); endless.fuelSum += r.fuelLeft;
         }
       }
-      var payout = 0, dailyBest = 0;
+      var payout = 0, dailyBest = 0, objectiveBonus = 0, chapterBonus = 0;
       if (career) {
         var careerRec = save.career.contracts[lv.id] || (save.career.contracts[lv.id] = { done: false, best: 0, earned: 0 });
-        payout = Math.round((90 + lv.id * 14 + r.score / 18 + r.starCount * 28) * (r.rough ? 0.6 : 1) * (careerRec.done ? 0.22 : 1));
-        careerRec.done = true; careerRec.best = Math.max(careerRec.best || 0, r.score); careerRec.earned = (careerRec.earned || 0) + payout;
+        var wasCareerDone = careerDone(careerBase(lv.id));
+        var t = jobTerms(lv), repeatFactor = careerRec.attempts ? (G.careerRun && G.careerRun.recovery ? 0.14 : 0.22) : 1;
+        var objectiveType = t.objectiveType || 'ring';
+        var objectiveComplete = objectiveType === 'fuel' ? r.stars.fuel : objectiveType === 'soft' ? !r.rough : r.stars.ring;
+        objectiveBonus = objectiveComplete ? t.objectiveBonus : 0;
+        var qualityPay = Math.round(((r.parts.soft || 0) + (r.parts.centre || 0) + (r.parts.attitude || 0)) / 22);
+        payout = Math.round((t.baseReward * repeatFactor + qualityPay + objectiveBonus) * (r.rough ? 0.68 : 1));
+        var chapter = G.careerRun && G.careerRun.recovery ? -1 : careerChapterIndex(careerBase(lv.id));
+        var beforeChapter = chapter >= 0 ? chapterProgress(chapter) : null;
+        careerRec.done = true;
+        if (lv.certification) careerRec.certified = !r.rough && r.stars.ring && r.stars.fuel;
+        else careerRec.certified = true;
+        careerRec.best = Math.max(careerRec.best || 0, r.score); careerRec.earned = (careerRec.earned || 0) + payout; careerRec.attempts = (careerRec.attempts || 0) + 1;
+        save.career.lastContract = lv.id;
+        var completedNow = !(G.careerRun && G.careerRun.recovery) && !wasCareerDone && careerDone(careerBase(lv.id));
+        if (completedNow) save.career.reputation += t.reputation + (objectiveComplete ? 1 : 0) + (r.rough ? 0 : 1);
         save.career.cash += payout;
+        if (chapter >= 0 && beforeChapter && beforeChapter.done < beforeChapter.total && chapterProgress(chapter).done === chapterProgress(chapter).total) {
+          save.career.chapterBonuses = save.career.chapterBonuses || {};
+          if (!save.career.chapterBonuses[chapter]) { chapterBonus = 350; save.career.chapterBonuses[chapter] = true; save.career.cash += chapterBonus; save.career.reputation += 4; }
+        }
       }
       if (daily) {
         var priorDaily = save.daily.scores[G.dailyRun.date]; dailyBest = !priorDaily || r.score > priorDaily.score;
         if (dailyBest) save.daily.scores[G.dailyRun.date] = { name: save.daily.name, score: r.score };
       }
-      if (!endless && !daily && r.score > prevBest && G.lastReplay) { G.lastReplay.score = r.score; save.ghosts[lv.id] = cloneJson(G.lastReplay); }
+      if (!endless && !daily && r.score > prevBest && G.lastReplay) { G.lastReplay.score = r.score; save.ghosts[career ? 'career:' + lv.id : lv.id] = cloneJson(G.lastReplay); }
       if (daily && dailyBest && G.lastReplay) { G.lastReplay.score = r.score; save.daily.ghosts[G.dailyRun.date] = cloneJson(G.lastReplay); }
       if (career || dailyBest || (!endless && r.score > prevBest)) persist();
       var side = Math.abs(r.uc) < 0.5 ? 'on the mark' : fmt(Math.abs(r.uc), 1) + ' m off centre';
@@ -1201,7 +1365,14 @@
       var p = r.parts;
       h += '<table class="score"><tr><td>Landing</td><td>' + p.landing + '</td></tr><tr><td>Soft touchdown</td><td>+' + p.soft + '</td></tr><tr><td>Centring</td><td>+' + p.centre + '</td></tr><tr><td>Fuel left</td><td>+' + p.fuel + '</td></tr><tr><td>Attitude</td><td>+' + p.attitude + '</td></tr>';
       if (p.trick) h += '<tr><td>Backflip bonus</td><td>+' + p.trick + '</td></tr>';
-      if (career) h += '<tr><td>Contract payment</td><td>+$' + payout.toLocaleString() + '</td></tr>';
+      if (career) {
+        h += '<tr><td>Operating cost</td><td>−$' + (G.careerRun.operatingCost || 0).toLocaleString() + '</td></tr>';
+        if (G.careerRun.premium) h += '<tr><td>Insurance premium</td><td>−$' + G.careerRun.premium.toLocaleString() + '</td></tr>';
+        h += '<tr><td>Landing payment</td><td>+$' + payout.toLocaleString() + '</td></tr>';
+        if (objectiveBonus) h += '<tr><td>Optional objective</td><td>+$' + objectiveBonus.toLocaleString() + '</td></tr>';
+        if (chapterBonus) h += '<tr><td>Chapter certification bonus</td><td>+$' + chapterBonus.toLocaleString() + '</td></tr>';
+        h += '<tr><td>Programme reputation</td><td>+' + ((completedNow ? jobTerms(lv).reputation + (objectiveBonus ? 1 : 0) + (r.rough ? 0 : 1) : 0) + (chapterBonus ? 4 : 0)) + '</td></tr>';
+      }
       h += '<tr class="total"><td>Score</td><td><span id="r-score">0</span>' + (r.score > prevBest && prevBest > 0 ? '<span class="tag-new">NEW BEST</span>' : '') + '</td></tr></table>';
       h += '<div class="actions">';
       if (endless) h += '<button class="btn primary" id="r-next">Next descent <small>Round ' + String(endless.round + 1).padStart(2, '0') + '</small></button>';
@@ -1224,8 +1395,24 @@
         h += '<p class="tip death-tip">' + m.tip + '</p><div class="actions"><button class="btn primary" id="r-retry">Run it back</button><button class="btn ghost" id="r-mode">Change difficulty</button><button class="btn ghost" id="r-levels">Missions</button><div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export replay</button></div><button class="btn ghost" id="r-clip">Export video clip</button><p id="r-clip-status" class="daily-status">A replay file can be shared and watched in Hoverslam.</p></div>';
       } else {
         var dailyFail = G.runType === 'daily', careerFail = G.runType === 'career';
+        var repairBill = 0, repairDamage = 0;
+        if (careerFail) {
+          var terms = jobTerms(lv), speed = Number.isFinite(r.speed) ? r.speed : 0;
+          var impactFactor = r.reason === 'entry' ? 1.25 : r.reason === 'hard' || r.reason === 'ground' ? 1.1 : r.reason === 'tilt-body' ? 0.95 : 0.72;
+          repairDamage = Math.min(terms.repairCap, Math.round((34 + speed * 1.35 + terms.risk * 18) * impactFactor));
+          repairBill = G.careerRun && G.careerRun.insured ? Math.ceil(repairDamage * (1 - terms.insuranceCoverage)) : repairDamage;
+          save.career.cash = Math.max(0, save.career.cash - repairBill);
+          var repLoss = G.careerRun && G.careerRun.recovery ? 0 : Math.max(1, Math.floor(terms.risk / 2));
+          save.career.reputation = Math.max(0, save.career.reputation - repLoss);
+          persist();
+        }
         h += '<div class="result-head"><p class="eyebrow">' + (dailyFail ? 'Daily challenge · ' + G.dailyRun.date : careerFail ? 'Career contract ' + lv.id : 'Mission ' + lv.id) + ' · ' + lv.name + '</p><h2>' + m.title + '</h2></div>';
         h += '<p class="grade bad">' + m.detail + '</p><div class="tip">' + m.tip + '</div>';
+        if (careerFail) {
+          h += '<table class="score"><tr><td>Operating cost</td><td>−$' + (G.careerRun.operatingCost || 0).toLocaleString() + '</td></tr>';
+          if (G.careerRun.premium) h += '<tr><td>Insurance premium</td><td>−$' + G.careerRun.premium.toLocaleString() + '</td></tr>';
+          h += '<tr><td>Repair exposure</td><td>$' + repairDamage.toLocaleString() + ' / $' + jobTerms(lv).repairCap.toLocaleString() + ' cap</td></tr><tr><td>Your repair bill</td><td>−$' + repairBill.toLocaleString() + (G.careerRun.insured ? ' · insured' : ' · uninsured') + '</td></tr><tr><td>Reputation</td><td>−' + repLoss + '</td></tr></table>';
+        }
         h += '<div class="actions"><button class="btn primary" id="r-retry">Try again</button>' + (careerFail ? '<button class="btn ghost" id="r-career">Career contracts</button>' : dailyFail ? '<button class="btn ghost" id="r-daily-board">Today’s board</button>' : '<button class="btn ghost" id="r-levels">Missions</button>') + '<div class="row"><button class="btn ghost" id="r-watch">Watch replay</button><button class="btn ghost" id="r-export">Export replay</button></div><button class="btn ghost" id="r-clip">Export video clip</button><p id="r-clip-status" class="daily-status">A replay file can be shared and watched in Hoverslam.</p>' + (dailyFail ? '<p id="r-submit-status" class="daily-status">A successful landing is required for the daily board.</p>' : '') + '</div>';
       }
     }
@@ -1265,6 +1452,7 @@
       case 'edge': return { title: 'Clipped the edge', detail: 'One leg was off the pad.', tip: 'Aim for the glowing ring in the middle. Use the marker above the ship to line up early.' };
       case 'sea': return { title: 'Splashdown', detail: 'You missed the ship and hit the water.', tip: 'Steer sideways while you still have height. The ship arrow shows which way to lean.' };
       case 'ground': return { title: 'Missed the pad', detail: 'You struck the surface outside the landing platform.', tip: 'Keep the pad in view and cancel your sideways drift before the last 100 metres.' };
+      case 'entry': return { title: 'Entry corridor lost', detail: 'The ship reached the surface before the belly-flop to upright transition was complete.', tip: 'Keep the ship broadside above the marker, then rotate upright while the flip window is open.' };
       case 'tilt-body': return { title: 'Fell over', detail: 'The booster came in off its legs.', tip: 'Keep it upright. Legs first, nose up.' };
       default: return { title: 'Lost the booster', detail: 'The legs were not down in time.', tip: 'Give the legs a few seconds to lock before you touch down.' };
     }
@@ -1333,21 +1521,21 @@
     }; reader.readAsText(file);
   });
   on('e-back', openMenu);
-  Array.prototype.forEach.call(document.querySelectorAll('[data-endless]'), function (b) { b.addEventListener('click', function () { Snd.init(); Snd.click(); startEndless(b.getAttribute('data-endless')); }); });
+  Array.prototype.forEach.call(document.querySelectorAll ? document.querySelectorAll('[data-endless]') : [], function (b) { b.addEventListener('click', function () { Snd.init(); Snd.click(); startEndless(b.getAttribute('data-endless')); }); });
   on('m-settings', function () { openSettings('menu'); });
   on('l-back', openMenu);
   on('b-go', launch);
-  on('b-back', function () { if (G.cur && cleared()) openLevels(); else openMenu(); });
+  on('b-back', function () { if (G.runType === 'career') openCareer(); else if (G.cur && cleared()) openLevels(); else openMenu(); });
   on('btn-pause', function () { pause(true); });
   on('p-resume', function () { pause(false); });
   on('p-restart', function () { G.paused = false; retry(); });
-  on('p-quit', function () { G.paused = false; openLevels(); });
+  on('p-quit', function () { G.paused = false; if (G.runType === 'career') openCareer(); else openLevels(); });
   on('s-done', function () { openMenu(); });
   document.getElementById('s-reset').addEventListener('click', function () {
     var b = this;
     if (!b._arm) { b._arm = true; b.textContent = 'Tap again to erase everything'; setTimeout(function () { b._arm = false; b.textContent = 'Reset progress'; }, 3500); return; }
     save.levels = {}; save.ghosts = {}; save.endless = {};
-    save.career = { cash: 850, contracts: {}, upgrades: { engine: 0, tank: 0, steering: 0 } };
+    save.career = { cash: 850, contracts: {}, upgrades: { engine: 0, tank: 0, steering: 0, gear: 0 }, reputation: 0, lastContract: 0, chapterBonuses: {} };
     save.daily = { name: 'PILOT', scores: {}, ghosts: {} };
     persist(); b._arm = false; b.textContent = 'Progress erased'; buildMenu();
   });
@@ -1436,7 +1624,7 @@
   }
 
   // ------------------------------------------------------------------ boot
-  if (TEST) { TEST.G = G; TEST.key = key; window.__hs = TEST; }
+  if (TEST) { TEST.G = G; TEST.key = key; TEST.save = save; TEST.openCareer = openCareer; TEST.buildCareer = buildCareer; TEST.buyUpgrade = purchaseCareerUpgrade; window.__hs = TEST; }
   resize();
   window.addEventListener('resize', function () { resize(); fitLogo(); });
   if (window.ResizeObserver) { try { new ResizeObserver(resize).observe($('#app')); } catch (e) {} }

@@ -55,8 +55,23 @@
     // away/zig (ship flees / weaves), shear (altitude where the wind flips), fault {hi, lo, d0, d1} (engine cut-out),
     // blackout [hi, lo] (instrument dropout altitudes), rcsL/rcsR (turn strength each way)
     var d = { vMax: 10, hMax: 6, aMax: 0.3, wMax: 0.9, vx: 6, tilt: 0.12, tiltMin: 0, om0: 0, shipV: 0, away: false, zig: 0, gust: 0, wind: 0, shear: 0,
-      swell: 0.6, fuel: 1, burn: 0.0125, thrust: 1, leak: 0, vxAway: false, fault: null, blackout: null, rcsL: 1, rcsR: 1, hazard: '' };
+      swell: 0.6, fuel: 1, burn: 0.0125, thrust: 1, leak: 0, vxAway: false, fault: null, blackout: null, rcsL: 1, rcsR: 1, hazard: '', world: 'earth', vehicle: 'booster' };
     for (var k in o) d[k] = o[k];
+    if (d.terrain === 'moon') { d.world = 'moon'; d.vehicle = 'hls'; }
+    if (d.terrain === 'mars') { d.world = 'mars'; d.vehicle = 'starship'; }
+    d.certification = d.certification || d.id === 22 || d.id === 35 || d.id === 45;
+    if (d.atmosphericEntry) d.entryFlipStart = d.entryFlipStart || 2600;
+    var risk = d.atmosphericEntry || d.fault || d.blackout || d.away || d.vxAway ? 3 : (d.gust > 0.9 || d.deck < 65 || d.leak ? 2 : 1);
+    var objectiveType = d.id % 3 === 0 ? 'fuel' : d.id % 3 === 1 ? 'ring' : 'soft';
+    d.contract = d.contract || {
+      baseReward: Math.round(245 + d.id * 9 + d.alt * 0.018 + risk * 42),
+      operatingCost: Math.round(38 + d.alt * 0.025 + risk * 24),
+      repairCap: Math.round(180 + d.alt * 0.035 + risk * 45),
+      insurancePremium: Math.round(38 + risk * 14), insuranceCoverage: 0.72,
+      reputation: risk, objectiveBonus: 85 + risk * 25, risk: risk,
+      objectiveType: objectiveType,
+      optionalObjective: d.certification ? 'Qualification: clean touchdown inside the ring with fuel remaining' : objectiveType === 'fuel' ? 'Preserve the marked fuel reserve' : objectiveType === 'soft' ? 'Complete a clean, non-rough touchdown' : 'Touch down inside the landing ring'
+    };
     d.fuel *= 0.9 * 0.82;
     if (d.fuelGoal !== undefined) d.fuelGoal *= 0.9 * 0.82;
     d.ring = o.ring || Math.max(7, d.deck * 0.14);
@@ -86,8 +101,28 @@
     L({ id: 21, name: 'Blackout', sky: 'night', blurb: 'A storm and a failing instrument panel.', hazard: 'Your readouts and guidance drop out for a few seconds near the end. Trust your eyes.', alt: 1000, dx: [80, 220], vx: 8, vy: -46, deck: 62, swell: 2.4, wind: 1.4, gust: 1.4, shipV: 2.5, blackout: [460, 160], fuel: 0.8, burn: 0.0155, fuelGoal: 0.54, ring: 5.5, vMax: 7, hMax: 4.2, aMax: 0.22 }),
     L({ id: 22, name: 'Hoverslam', sky: 'night', blurb: 'Everything at once. One burn, no mistakes.', hazard: 'Tumbling start, a fleeing ship, a weak engine that can cut out, a gale and a tiny pad.', alt: 1150, dx: [80, 180], vx: 7, vy: -56, tiltMin: 0.6, tilt: 1.1, om0: 0.5, deck: 50, swell: 2.4, wind: 1.6, gust: 1.0, shipV: 3.5, away: true, thrust: 0.92, fault: { hi: 520, lo: 340, d0: 1.2, d1: 1.8 }, fuel: 0.72, burn: 0.0158, fuelGoal: 0.45, ring: 5, vMax: 6.5, hMax: 4, aMax: 0.2 }),
     L({ id: 23, name: 'Mare Tranquillitatis', sky: 'moon', terrain: 'moon', gravity: 1.62, padName: 'M-04', blurb: 'A quiet touchdown in Mare Tranquillitatis. Low gravity stretches every correction.', alt: 620, dx: [85, 210], vx: 5, vy: -25, deck: 68, swell: 0, wind: 0, gust: 0, shipV: 0, fuel: 0.58, burn: 0.012, fuelGoal: 0.31, ring: 7, vMax: 7, hMax: 4.5, aMax: 0.24 }),
-    L({ id: 24, name: 'Red Horizon', sky: 'mars', terrain: 'mars', gravity: 3.71, padName: 'A-12', blurb: 'Dust hangs over the Ares landing pad. The thin air offers almost no steering help.', alt: 780, dx: [100, 250], vx: 7, vy: -34, deck: 60, swell: 0, wind: 0.35, gust: 0.12, shipV: 0, fuel: 0.67, burn: 0.013, fuelGoal: 0.38, ring: 6, vMax: 8, hMax: 5, aMax: 0.25 }),
-    L({ id: 25, name: 'Black Squall', sky: 'stormNight', blurb: 'A night recovery in a hard squall. Rain, crosswind and a rolling deck.', hazard: 'Storm gusts reverse near the surface. Keep fuel for the last correction.', alt: 980, dx: [90, 220], vx: 9, vy: -48, deck: 58, swell: 2.4, wind: 1.5, gust: 1.45, shear: 340, shipV: 2.2, fuel: 0.68, burn: 0.0155, fuelGoal: 0.4, ring: 5.5, vMax: 7, hMax: 4.2, aMax: 0.22 })
+    L({ id: 24, name: 'Red Horizon', sky: 'mars', world: 'mars', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'A-12', blurb: 'The first Starship landing at Ares. Ride the Martian air broadside, then flip upright in the marked window.', hazard: 'BELLY-FLOP ENTRY: keep the ship broadside above 2,600 m. Rotate upright before the low-altitude deadline, then brake for the pad.', alt: 8200, dx: [55, 125], vx: 8, vy: -220, tiltMin: 1.2, tilt: 1.6, deck: 164, swell: 0, wind: 0.35, gust: 0.12, shipV: 0, fuel: 1.18, burn: 0.014, fuelGoal: 0.38, ring: 18, vMax: 8, hMax: 5, aMax: 0.25, entryFlipStart: 2600, entryFailAlt: 500 }),
+    L({ id: 25, name: 'Black Squall', sky: 'stormNight', blurb: 'A night recovery in a hard squall. Rain, crosswind and a rolling deck.', hazard: 'Storm gusts reverse near the surface. Keep fuel for the last correction.', alt: 980, dx: [90, 220], vx: 9, vy: -48, deck: 58, swell: 2.4, wind: 1.5, gust: 1.45, shear: 340, shipV: 2.2, fuel: 0.68, burn: 0.0155, fuelGoal: 0.4, ring: 5.5, vMax: 7, hMax: 4.2, aMax: 0.22 }),
+    L({ id: 26, name: 'South Pole Shadow', sky: 'moon', terrain: 'moon', world: 'moon', vehicle: 'hls', gravity: 1.62, padName: 'SHACKLETON', blurb: 'Land beside the shadow line at Shackleton crater. The low sun hides the pad edge.', alt: 760, dx: [110, 240], vx: 7, vy: -31, deck: 72, fuel: 0.82, burn: 0.0108, fuelGoal: 0.4, ring: 9, vMax: 6.5, hMax: 4.2, aMax: 0.23, swell: 0 }),
+    L({ id: 27, name: 'HLS Hover Test', sky: 'moon', terrain: 'moon', gravity: 1.62, vehicle: 'hls', padName: 'M-07', blurb: 'A precision test for the HLS landing engines. The pad is deliberately narrow.', alt: 540, dx: [70, 155], vx: 4, vy: -24, deck: 54, fuel: 0.72, burn: 0.0105, fuelGoal: 0.34, ring: 6, vMax: 5.8, hMax: 3.8, aMax: 0.2, swell: 0 }),
+    L({ id: 28, name: 'Rille Crossing', sky: 'dusk', terrain: 'moon', gravity: 1.62, vehicle: 'hls', padName: 'RILLE 3', blurb: 'A long diagonal hop across a shallow lunar rille. Arrive with almost no sideways drift.', alt: 930, dx: [220, 360], vx: 10, vy: -28, deck: 76, fuel: 0.91, burn: 0.011, fuelGoal: 0.45, ring: 10, vMax: 6.5, hMax: 4, aMax: 0.22, swell: 0 }),
+    L({ id: 29, name: 'Regolith Freight', sky: 'night', terrain: 'moon', gravity: 1.62, vehicle: 'hls', padName: 'CARGO 2', blurb: 'The cargo mass slows the HLS response. Give every correction time to build.', alt: 680, dx: [100, 215], vx: 6, vy: -27, deck: 78, thrust: 0.82, fuel: 0.88, burn: 0.0115, fuelGoal: 0.42, ring: 10, vMax: 6.2, hMax: 4.5, aMax: 0.23, swell: 0 }),
+    L({ id: 30, name: 'Farside Relay', sky: 'moon', terrain: 'moon', gravity: 1.62, vehicle: 'hls', padName: 'RELAY 9', blurb: 'The relay site is on the far side. A narrow approach corridor leaves little room to drift.', alt: 1050, dx: [300, 430], vx: 12, vy: -30, deck: 64, fuel: 0.9, burn: 0.0115, fuelGoal: 0.4, ring: 7, vMax: 6, hMax: 3.8, aMax: 0.21, swell: 0 }),
+    L({ id: 31, name: 'Dustless Night', sky: 'night', terrain: 'moon', gravity: 1.62, vehicle: 'hls', padName: 'M-12', blurb: 'A sunless approach lit only by the landing beacons and your instruments.', alt: 840, dx: [120, 255], vx: 8, vy: -30, deck: 66, fuel: 0.8, burn: 0.011, fuelGoal: 0.38, ring: 8, vMax: 6, hMax: 4.2, aMax: 0.22, swell: 0 }),
+    L({ id: 32, name: 'Crater Rim', sky: 'dawn', terrain: 'moon', gravity: 1.62, vehicle: 'hls', padName: 'RIM 1', blurb: 'The pad sits close to a crater rim. Keep the landing legs square to the surface.', alt: 720, dx: [80, 200], vx: 5, vy: -35, deck: 58, fuel: 0.94, burn: 0.011, fuelGoal: 0.46, ring: 6.5, vMax: 5.8, hMax: 4, aMax: 0.2, swell: 0 }),
+    L({ id: 33, name: 'Cold Restart', sky: 'moon', terrain: 'moon', gravity: 1.62, vehicle: 'hls', padName: 'HLS-B', blurb: 'A descent engine pauses briefly during the braking arc. Save room for the relight.', alt: 890, dx: [130, 260], vx: 7, vy: -34, deck: 70, fault: { hi: 410, lo: 280, d0: 1, d1: 1.5 }, fuel: 0.91, burn: 0.011, fuelGoal: 0.42, ring: 8, vMax: 6, hMax: 4, aMax: 0.21, swell: 0 }),
+    L({ id: 34, name: 'Cargo Beacon', sky: 'dusk', terrain: 'moon', gravity: 1.62, vehicle: 'hls', padName: 'BEACON 4', blurb: 'A beacon marks the centre of a broad cargo pad. Reach it without wasting the reserve.', alt: 780, dx: [105, 210], vx: 6, vy: -32, deck: 84, fuel: 0.69, burn: 0.0105, fuelGoal: 0.28, ring: 12, vMax: 6.4, hMax: 4.4, aMax: 0.23, swell: 0 }),
+    L({ id: 35, name: 'HLS Certification', sky: 'moon', terrain: 'moon', gravity: 1.62, vehicle: 'hls', padName: 'CERT PAD', blurb: 'Final lunar qualification: a small target, an offset approach and a tight reserve.', alt: 1120, dx: [260, 390], vx: 11, vy: -36, deck: 60, fuel: 0.89, burn: 0.0115, fuelGoal: 0.4, ring: 6.5, vMax: 5.6, hMax: 3.7, aMax: 0.19, swell: 0 }),
+    L({ id: 36, name: 'Ares Lowlands', sky: 'mars', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'A-18', blurb: 'First cargo arrival in the Ares lowlands. Hold the broadside through peak drag, then flip.', alt: 9000, dx: [70, 145], vx: 9, vy: -225, tiltMin: 1.2, tilt: 1.7, deck: 170, fuel: 1.2, burn: 0.014, fuelGoal: 0.4, ring: 20, vMax: 8, hMax: 5, aMax: 0.25, entryFlipStart: 2700, entryFailAlt: 500 }),
+    L({ id: 37, name: 'Valles Approach', sky: 'mars', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'V-02', blurb: 'A long approach above Valles Marineris. The extra horizontal speed makes the flip timing matter.', alt: 9800, dx: [95, 180], vx: 11, vy: -240, tiltMin: 1.25, tilt: 1.7, deck: 186, fuel: 1.25, burn: 0.0145, fuelGoal: 0.39, ring: 22, vMax: 8.5, hMax: 5.2, aMax: 0.25, entryFlipStart: 3000, entryFailAlt: 650 }),
+    L({ id: 38, name: 'Olympus Cargo', sky: 'dusk', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'OLYMPUS 1', blurb: 'A heavy cargo ship enters above the high plateau, where the thinner air gives less braking help.', alt: 11000, dx: [85, 160], vx: 9, vy: -255, tiltMin: 1.25, tilt: 1.65, deck: 190, thrust: 0.85, fuel: 1.34, burn: 0.015, fuelGoal: 0.38, ring: 24, vMax: 9, hMax: 5.5, aMax: 0.26, entryDensity: 0.000095, entryFlipStart: 3200, entryFailAlt: 700 }),
+    L({ id: 39, name: 'Night-side Flip', sky: 'night', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'NIGHT 6', blurb: 'A night-side arrival with only the approach lights to frame the flip corridor.', alt: 8600, dx: [55, 130], vx: 8, vy: -220, tiltMin: 1.2, tilt: 1.7, deck: 158, fuel: 1.19, burn: 0.014, fuelGoal: 0.39, ring: 18, vMax: 8, hMax: 5, aMax: 0.24, entryFlipStart: 2600, entryFailAlt: 520 }),
+    L({ id: 40, name: 'Crosswind Aerobrake', sky: 'storm', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'A-24', blurb: 'A high crosswind builds during the belly-flop. Keep the landing zone aligned before the flip.', alt: 9600, dx: [75, 150], vx: 9, vy: -235, wind: 0.35, gust: 0.2, tiltMin: 1.2, tilt: 1.65, deck: 172, fuel: 1.25, burn: 0.0145, fuelGoal: 0.39, ring: 21, vMax: 8.5, hMax: 5, aMax: 0.24, entryFlipStart: 2900, entryFailAlt: 620 }),
+    L({ id: 41, name: 'Engine Relight', sky: 'mars', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'A-31', blurb: 'A descent-engine relight fault is expected during the flip. Keep the transition controlled.', alt: 9000, dx: [65, 140], vx: 8, vy: -230, tiltMin: 1.2, tilt: 1.7, deck: 168, fault: { hi: 970, lo: 780, d0: 1.1, d1: 1.5 }, fuel: 1.28, burn: 0.014, fuelGoal: 0.38, ring: 20, vMax: 8.2, hMax: 5, aMax: 0.24, entryFlipStart: 2800, entryFailAlt: 650 }),
+    L({ id: 42, name: 'Dust Front', sky: 'dusk', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'DUST 3', blurb: 'A dusty front masks the pad until late. Use the entry marker and start the flip on altitude.', alt: 9400, dx: [80, 150], vx: 8, vy: -240, tiltMin: 1.25, tilt: 1.7, deck: 176, fuel: 1.28, burn: 0.0145, fuelGoal: 0.4, ring: 21, vMax: 8.3, hMax: 5.2, aMax: 0.24, entryDensity: 0.00014, entryFlipStart: 2850, entryFailAlt: 600 }),
+    L({ id: 43, name: 'Narrow Survey Pad', sky: 'mars', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'SURVEY 8', blurb: 'The survey pad is narrow for a Starship. Bleed off sideways speed before committing to the flip.', alt: 10000, dx: [90, 165], vx: 10, vy: -245, tiltMin: 1.2, tilt: 1.65, deck: 142, fuel: 1.34, burn: 0.0145, fuelGoal: 0.39, ring: 16, vMax: 8, hMax: 4.5, aMax: 0.23, entryFlipStart: 3000, entryFailAlt: 650 }),
+    L({ id: 44, name: 'Phobos Window', sky: 'night', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'PHOBOS 2', blurb: 'A moonset shadow crosses the pad while the ship rotates from belly-flop to vertical.', alt: 9200, dx: [75, 150], vx: 9, vy: -235, tiltMin: 1.2, tilt: 1.7, deck: 170, fuel: 1.29, burn: 0.014, fuelGoal: 0.4, ring: 20, vMax: 8.2, hMax: 5, aMax: 0.24, entryFlipStart: 2780, entryFailAlt: 620 }),
+    L({ id: 45, name: 'Starship Certification', sky: 'mars', terrain: 'mars', vehicle: 'starship', atmosphericEntry: true, gravity: 3.71, padName: 'CERT PAD', blurb: 'Final Mars certification: heavy entry, a compact landing zone and a short powered descent.', alt: 10800, dx: [100, 175], vx: 11, vy: -250, tiltMin: 1.25, tilt: 1.72, deck: 150, thrust: 0.9, fuel: 1.32, burn: 0.015, fuelGoal: 0.39, ring: 17, vMax: 7.8, hMax: 4.5, aMax: 0.22, entryFlipStart: 3100, entryFailAlt: 700 })
   ];
 
   // ---------------------------------------------------------------- environment
@@ -157,15 +192,27 @@
   function massRatio(s) { return 0.7 + 0.3 * s.fuel; }
   function gravity(s) { return s.level.gravity || G; }
   function maxAccel(s) { return THRUST * s.level.thrust / massRatio(s); }
+  function dragFor(s, y, vx, vy) {
+    var speed = Math.sqrt(vx * vx + vy * vy);
+    if (!s.level.atmosphericEntry) return { ax: -dragK(y) * speed * vx, ay: -dragK(y) * speed * vy, load: 0 };
+    var broadside = 1 - Math.abs(Math.cos(wrapAngle(s.th)));
+    var factor = 0.32 + 1.25 * broadside;
+    var k = (s.level.entryDensity || 0.00012) * Math.exp(-Math.max(y, 0) / (s.level.entryScale || 10000)) * factor;
+    var mag = k * speed * speed;
+    return { ax: -k * speed * vx, ay: -k * speed * vy, load: clamp(mag / 22, 0, 1) };
+  }
 
   function dailyChallenge(date) {
     date = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? date : new Date().toISOString().slice(0, 10);
     var h = 2166136261;
     for (var i = 0; i < date.length; i++) { h ^= date.charCodeAt(i); h = Math.imul(h, 16777619); }
     h >>>= 0;
+    // Daily flights are always a stock vehicle with a fixed assist setting. The
+    // date selects the scenario; career upgrades never enter this function.
     var level = {}, base = LEVELS[h % LEVELS.length];
     Object.keys(base).forEach(function (k) { level[k] = base[k]; });
     level.id = 1000 + (h % LEVELS.length); level.name = 'Daily Flight'; level.blurb = 'One shared, seeded descent. Same conditions for every pilot today.';
+    level.stockLoadout = true;
     return { date: date, seed: h || 1, level: level };
   }
 
@@ -179,7 +226,8 @@
       wind0: (r() < 0.5 ? -1 : 1) * level.wind, wp1: r() * 6.28, wp2: r() * 6.28,
       ship: { x: 0, v: (r() < 0.5 ? -1 : 1) * level.shipV, vNow: 0, ph: r() * 6.28 },
       fuel: level.fuel, throttle: 0, legs: 0, legsStarted: false, rot: 0, om: 0,
-      land: null, burnTime: 0, flipDirection: 0, flipProgress: 0, flips: 0, trickScore: 0
+      land: null, burnTime: 0, flipDirection: 0, flipProgress: 0, flips: 0, trickScore: 0,
+      entryPhase: level.atmosphericEntry ? 'bellyflop' : null, entryLoad: 0
     };
     s.ship.vNow = s.ship.v;
     var dxAbs = level.dx[0] + (level.dx[1] - level.dx[0]) * r();
@@ -238,9 +286,10 @@
 
     // forces
     var aT = maxAccel(s) * s.throttle;
-    var kd = dragK(s.y), sp = Math.sqrt(s.vx * s.vx + s.vy * s.vy);
-    var ax = -Math.sin(s.th) * aT + windAccel(s, s.y) - kd * sp * s.vx;
-    var ay = Math.cos(s.th) * aT - gravity(s) - kd * sp * s.vy;
+    var drag = dragFor(s, s.y, s.vx, s.vy);
+    var ax = -Math.sin(s.th) * aT + windAccel(s, s.y) + drag.ax;
+    var ay = Math.cos(s.th) * aT - gravity(s) + drag.ay;
+    s.entryLoad = drag.load;
     s.vx += ax * dt; s.vy += ay * dt;
     s.x += s.vx * dt; s.y += s.vy * dt;
     s.fuel = Math.max(0, s.fuel - (lv.burn * s.throttle + lv.leak) * dt);
@@ -250,11 +299,16 @@
     s.D = D;
     var alt = altitude(s, D);
     s.alt = alt;
+    if (lv.atmosphericEntry) {
+      if (s.entryPhase === 'bellyflop' && alt <= lv.entryFlipStart) { s.entryPhase = 'flip-window'; s.events.push('entry-flip-window'); }
+      if (s.entryPhase === 'flip-window' && Math.abs(wrapAngle(s.th)) <= 0.28) { s.entryPhase = 'powered'; s.events.push('entry-upright'); }
+      if (s.entryPhase !== 'powered' && alt <= (lv.entryFailAlt || 500)) return finish(s, D, 'entry', toDeck(D, s.x, s.y).u);
+    }
     if (lv.blackout) s.blackout = alt < lv.blackout[0] && alt > lv.blackout[1];
 
     // landing legs
     if (!s.legsStarted && alt < LEG_ALT) { s.legsStarted = true; s.events.push('legs'); }
-    if (s.legsStarted) s.legs = Math.min(1, s.legs + dt / LEG_TIME);
+    if (s.legsStarted) s.legs = Math.min(1, s.legs + dt / (lv.legTime || LEG_TIME));
 
     if (alt > 40 && s.y > 60) return;   // nothing to hit up here
 
@@ -380,7 +434,7 @@
       dx: s.x - D.x,
       u: q.u,
       fuel: s.fuel,
-      wind: windAccel(s, s.y)
+      wind: windAccel(s, s.y), entryPhase: s.entryPhase, entryLoad: s.entryLoad || 0
     };
   }
 
@@ -400,9 +454,9 @@
     var pts = [], x = s.x, y = s.y, vx = s.vx, vy = s.vy, t = s.t, dt = 0.2;
     var lv = s.level, hit = null, c = Math.cos(s.th);
     for (var i = 0; i < 160; i++) {
-      var kd = dragK(y), sp = Math.sqrt(vx * vx + vy * vy);
-      vx += (windAccel(s, y, t) - kd * sp * vx) * dt;
-      vy += (-gravity(s) - kd * sp * vy) * dt;
+      var drag = dragFor(s, y, vx, vy);
+      vx += (windAccel(s, y, t) + drag.ax) * dt;
+      vy += (-gravity(s) + drag.ay) * dt;
       x += vx * dt; y += vy * dt; t += dt;
       pts.push({ x: x, y: y });
       var xs = s.ship.x + (lv.zig ? 0 : s.ship.v * (t - s.t));
@@ -420,6 +474,11 @@
     var lv = s.level, D = deckPose(s);
     var aMax = maxAccel(s);
     var alt = altitude(s, D);
+    if (lv.atmosphericEntry && s.entryPhase === 'bellyflop') {
+      var bellyTarget = (s.th < 0 ? -1 : 1) * Math.PI / 2;
+      var bellyErr = 4 * wrapAngle(bellyTarget - s.th) - s.om;
+      return { thrust: 0, left: bellyErr > 0.12, right: bellyErr < -0.12 };
+    }
     var dx = s.x - D.x, dvx = s.vx - D.vx, dvy = s.vy - D.vy;
     var cosT = Math.max(0.6, Math.cos(s.th));
     var g = gravity(s), aNet = Math.max(1, aMax * cosT - g);
@@ -455,7 +514,7 @@
 
   var Sim = {
     LEVELS: LEVELS, DT: DT, G: G, LEN: LEN, HALF_W: HALF_W, FREEBOARD: FREEBOARD, EDGE_MARGIN: EDGE_MARGIN,
-    FOOT_Y: FOOT_Y, FOOT_SPAN: FOOT_SPAN, FOLD_SPAN: FOLD_SPAN, FOLD_Y: FOLD_Y, ROT_MAX: ROT_MAX, LEG_ALT: LEG_ALT,
+    FOOT_Y: FOOT_Y, FOOT_SPAN: FOOT_SPAN, FOLD_SPAN: FOLD_SPAN, FOLD_Y: FOLD_Y, ROT_MAX: ROT_MAX, LEG_ALT: LEG_ALT, LEG_TIME: LEG_TIME,
     createSim: createSim, step: step, advanceTime: advanceTime, deckPose: deckPose, toDeck: toDeck, toWorld: toWorld, feet: feet, legGeom: legGeom,
     altitude: altitude, swellH: swellH, swellSlope: swellSlope, windAccel: windAccel,
     telemetry: telemetry, burnCue: burnCue, predict: predict, autopilot: autopilot, maxAccel: maxAccel, rng: rng, dailyChallenge: dailyChallenge
